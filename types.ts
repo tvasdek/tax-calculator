@@ -31,6 +31,11 @@ export interface TaxProjection {
   estimatedTax: number;
   expenseCount: number;
   incomeCount: number;
+  
+  // ADD THESE THREE LINES:
+  currentYearTax?: number;      // 20% tax on profit
+  advancePayment?: number;       // 80% advance payment  
+  telosEpitideumatos?: number;   // €800 fixed fee
 }
 
 export interface MonthlyStats {
