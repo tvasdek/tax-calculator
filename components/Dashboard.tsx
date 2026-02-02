@@ -79,7 +79,7 @@ const Dashboard: React.FC<DashboardProps> = ({ projection, monthlyStats }) => {
         {/* Total Income */}
         <div className="bg-white rounded-2xl p-6 shadow-lg border border-slate-100">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-medium text-slate-500">ΦΟΡΟΛΟΓΗΤΑ ΚΕΡΔΗ</span>
+            <span className="text-sm font-medium text-slate-500">ΕΣΟΔΑ</span>
             <TrendingUp className="text-emerald-500" size={20} />
           </div>
           <p className="text-3xl font-bold text-slate-800 mb-1">
@@ -93,7 +93,7 @@ const Dashboard: React.FC<DashboardProps> = ({ projection, monthlyStats }) => {
         {/* Total Expenses */}
         <div className="bg-white rounded-2xl p-6 shadow-lg border border-slate-100">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-medium text-slate-500">ΕΠΙΠΛΕΕΣ</span>
+            <span className="text-sm font-medium text-slate-500">ΔΑΠΑΝΕΣ</span>
             <Receipt className="text-rose-500" size={20} />
           </div>
           <p className="text-3xl font-bold text-slate-800 mb-1">
@@ -124,7 +124,7 @@ const Dashboard: React.FC<DashboardProps> = ({ projection, monthlyStats }) => {
             {formatCurrency(netProfit)}
           </p>
           <p className="text-sm text-slate-600">
-            20% + Προκαταβολή + Τέλος Επιτηδεύματος
+            Έσοδα - Δαπάνες
           </p>
         </div>
       </div>
@@ -133,8 +133,8 @@ const Dashboard: React.FC<DashboardProps> = ({ projection, monthlyStats }) => {
       <div className="bg-white rounded-2xl p-6 shadow-lg border border-slate-100">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h3 className="text-xl font-bold text-slate-800">Ταμειακές Ροές (3D)</h3>
-            <p className="text-sm text-slate-500 mt-1">Μηνιαίος σύγκριση εσόδων και εξόδων</p>
+            <h3 className="text-xl font-bold text-slate-800">Γράφημα εσόδων - εξόδων</h3>
+            <p className="text-sm text-slate-500 mt-1">μηνιαία σύγκριση</p>
           </div>
           <div className="flex gap-4 text-sm">
             <div className="flex items-center gap-2">
@@ -205,7 +205,7 @@ const Dashboard: React.FC<DashboardProps> = ({ projection, monthlyStats }) => {
           <AlertCircle className="text-indigo-600 flex-shrink-0 mt-1" size={20} />
           <div>
             <h4 className="font-semibold text-indigo-900 mb-2">
-              Τύπος Υπολογισμού Φόρου Ο.Ε.
+              Τύπος Υπολογισμού Φόρου για Ο.Ε.
             </h4>
             <p className="text-sm text-indigo-800 leading-relaxed">
               (Έσοδα - Έξοδα) × 20% + Προκαταβολή Επόμενου Έτους (80%) + Τέλος Επιτηδεύματος (€800)

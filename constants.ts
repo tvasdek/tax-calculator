@@ -1,7 +1,7 @@
 import { Transaction, TransactionStatus, TransactionType } from './types';
 
 export const TAX_RATE = 0.2; // Simplified 20% tax rate for OE
-export const CURRENT_YEAR = 2024;
+export const CURRENT_YEAR = 2026;
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
