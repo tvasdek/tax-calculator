@@ -1,0 +1,5 @@
+{
+  "name": "TaxPulse OE",
+  "description": "Real-time tax calculator and financial dashboard for Greek OE companies, integrated with automated n8n workflows.",
+  "requestFramePermissions": []
+}

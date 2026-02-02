@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TaxPulse OE</title>
+    <!-- We keep Tailwind CDN for simplicity in this setup -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      /* Custom scrollbar for webkit */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #f1f1f1;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+      }
+      
+      /* 3D Bar Chart Styles */
+      .chart-container-3d {
+        perspective: 1000px;
+        transform-style: preserve-3d;
+      }
+      .bar-3d-group {
+        transform-style: preserve-3d;
+        transition: transform 0.5s ease-out;
+      }
+      .bar-3d {
+        position: relative;
+        transform-style: preserve-3d;
+      }
+      .bar-face {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        transform-origin: bottom;
+      }
+      .face-front {
+        height: 100%;
+        background-color: currentColor;
+        transform: translateZ(10px);
+      }
+      .face-back {
+        height: 100%;
+        background-color: currentColor;
+        filter: brightness(0.7);
+        transform: translateZ(-10px);
+      }
+      .face-right {
+        height: 100%;
+        width: 20px;
+        background-color: currentColor;
+        filter: brightness(0.85);
+        transform: rotateY(90deg) translateZ(-10px);
+        transform-origin: right bottom;
+        left: auto;
+        right: 0;
+      }
+      .face-left {
+        height: 100%;
+        width: 20px;
+        background-color: currentColor;
+        filter: brightness(0.85);
+        transform: rotateY(-90deg) translateZ(-10px);
+        transform-origin: left bottom;
+      }
+      .face-top {
+        width: 100%;
+        height: 20px;
+        background-color: currentColor;
+        filter: brightness(1.1);
+        transform: rotateX(90deg) translateZ(10px);
+        transform-origin: top;
+        top: 0;
+        bottom: auto;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.4",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.39.0",
+    "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
+    "date-fns": "https://esm.sh/date-fns@^4.1.0",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
+  }
+}
+</script>
+</head>
+  <body class="bg-slate-50 text-slate-900 font-sans antialiased selection:bg-indigo-100 selection:text-indigo-700">
+    <div id="root"></div>
+    <!-- This script tag is the entry point for Vite -->
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
