@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { TaxProjection, MonthlyStats } from '../types';
-import ThreeDBarChart from './ThreeDBarChart';
-import { ArrowUpRight, ArrowDownRight, TrendingUp, Wallet, Eye, EyeOff } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Receipt, AlertCircle } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 interface DashboardProps {
   projection: TaxProjection;
@@ -9,89 +9,213 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ projection, monthlyStats }) => {
-  const [showIncome, setShowIncome] = useState(true);
-  const [showExpenses, setShowExpenses] = useState(true);
+  // Format currency
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('el-GR', {
+      style: 'currency',
+      currency: 'EUR',
+      minimumFractionDigits: 2,
+    }).format(amount);
+  };
+
+  // Calculate net profit for the indicator
+  const netProfit = projection.totalIncome - projection.totalExpenses;
+  const isProfitable = netProfit > 0;
+
+  // Check if we have any data in monthly stats
+  const hasData = monthlyStats.some(m => m.income > 0 || m.expenses > 0);
+  
+  // Debug log
+  console.log('📊 Dashboard monthlyStats:', monthlyStats);
+  console.log('📊 Has data:', hasData);
 
   return (
     <div className="space-y-6">
-      
-      {/* 3D Projection Card */}
-      <div className="relative group">
-        <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200"></div>
-        <div className="relative bg-white rounded-2xl p-6 md:p-8 shadow-xl border border-slate-100 overflow-hidden">
-            <div className="absolute top-0 right-0 p-4 opacity-5">
-                <TrendingUp size={120} />
-            </div>
-            
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-end relative z-10">
-                <div>
-                    <h2 className="text-slate-500 font-medium text-sm tracking-wide uppercase mb-1">Προβλεψη Φορου ({projection.year})</h2>
-                    <div className="text-5xl sm:text-7xl font-bold text-slate-900 tracking-tight flex items-baseline gap-2">
-                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600">
-                          €{projection.estimatedTax.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                        </span>
-                    </div>
-                    <p className="mt-2 text-slate-500 text-sm max-w-md">
-                        Πηγή: AADE & Manual Reviews.
-                        <br/>20% + Προκαταβολή + Τέλος Επιτηδεύματος.
-                    </p>
-                </div>
+      {/* Title */}
+      <div>
+        <h2 className="text-3xl font-bold text-slate-800">
+          ΠΡΟΒΛΕΨΗ ΦΟΡΟΥ ({projection.year})
+        </h2>
+        <p className="text-slate-500 mt-1">
+          Πηγή: AADE & Manual Reviews.
+        </p>
+      </div>
 
-                <div className="mt-6 md:mt-0 flex gap-6">
-                    <div className="text-right">
-                        <div className="text-xs text-slate-400 uppercase font-semibold">Φορολογητεα Κερδη</div>
-                        <div className="text-xl font-bold text-slate-700">€{projection.taxableIncome.toLocaleString()}</div>
-                    </div>
-                     <div className="text-right">
-                        <div className="text-xs text-slate-400 uppercase font-semibold">Εγγραφες</div>
-                        <div className="text-xl font-bold text-slate-700">{projection.incomeCount + projection.expenseCount}</div>
-                    </div>
-                </div>
-            </div>
+      {/* Tax Summary Card */}
+      <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl p-8 text-white shadow-2xl">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold opacity-90">Εκτιμώμενος Φόρος</h3>
+          <DollarSign className="opacity-75" size={24} />
+        </div>
+        <div className="text-5xl font-bold mb-6">
+          {formatCurrency(projection.estimatedTax)}
+        </div>
+        
+        {/* Tax Breakdown */}
+        <div className="grid grid-cols-3 gap-4 pt-6 border-t border-white/20">
+          <div>
+            <p className="text-sm opacity-75 mb-1">Φόρος (20%)</p>
+            <p className="text-xl font-semibold">
+              {formatCurrency(projection.currentYearTax || (projection.taxableIncome * 0.20))}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm opacity-75 mb-1">Προκαταβολή (80%)</p>
+            <p className="text-xl font-semibold">
+              {formatCurrency(projection.advancePayment || (projection.taxableIncome * 0.20 * 0.80))}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm opacity-75 mb-1">Τέλος Επιτηδεύματος</p>
+            <p className="text-xl font-semibold">
+              {formatCurrency(projection.telosEpitideumatos || 800)}
+            </p>
+          </div>
         </div>
       </div>
 
-      {/* Main Graph Section */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-        <div className="flex flex-col sm:flex-row justify-between items-center mb-6">
-            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                <span className="bg-indigo-100 text-indigo-700 p-1.5 rounded-md"><Wallet size={18}/></span>
-                Ταμειακές Ροές (3D)
-            </h3>
-            
-            <div className="flex items-center gap-3 mt-4 sm:mt-0">
-                <button 
-                    onClick={() => setShowIncome(!showIncome)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${showIncome ? 'bg-emerald-100 text-emerald-800 ring-2 ring-emerald-500/20' : 'bg-slate-50 text-slate-400'}`}
-                >
-                    {showIncome ? <Eye size={14}/> : <EyeOff size={14}/>}
-                    Έσοδα
-                </button>
-                 <button 
-                    onClick={() => setShowExpenses(!showExpenses)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${showExpenses ? 'bg-rose-100 text-rose-800 ring-2 ring-rose-500/20' : 'bg-slate-50 text-slate-400'}`}
-                >
-                     {showExpenses ? <Eye size={14}/> : <EyeOff size={14}/>}
-                    Έξοδα
-                </button>
-            </div>
+      {/* Key Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Total Income */}
+        <div className="bg-white rounded-2xl p-6 shadow-lg border border-slate-100">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-medium text-slate-500">ΕΣΟΔΑ</span>
+            <TrendingUp className="text-emerald-500" size={20} />
+          </div>
+          <p className="text-3xl font-bold text-slate-800 mb-1">
+            {formatCurrency(projection.totalIncome)}
+          </p>
+          <p className="text-sm text-slate-500">
+            {projection.incomeCount} έσοδα
+          </p>
         </div>
 
-        <ThreeDBarChart data={monthlyStats} showIncome={showIncome} showExpenses={showExpenses} />
+        {/* Total Expenses */}
+        <div className="bg-white rounded-2xl p-6 shadow-lg border border-slate-100">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-medium text-slate-500">ΔΑΠΑΝΕΣ</span>
+            <Receipt className="text-rose-500" size={20} />
+          </div>
+          <p className="text-3xl font-bold text-slate-800 mb-1">
+            {formatCurrency(projection.totalExpenses)}
+          </p>
+          <p className="text-sm text-slate-500">
+            {projection.expenseCount} έξοδα
+          </p>
+        </div>
 
-        <div className="grid grid-cols-2 gap-4 mt-6">
-            <div className={`p-4 rounded-xl border transition-all duration-500 ${showIncome ? 'bg-emerald-50/50 border-emerald-100' : 'opacity-50 bg-slate-50 border-slate-100'}`}>
-                <div className="flex items-center gap-2 mb-2 text-emerald-700 font-medium text-sm">
-                    <ArrowUpRight size={16} /> Σύνολο Εσόδων
-                </div>
-                <div className="text-2xl font-bold text-slate-800">€{projection.totalIncome.toLocaleString()}</div>
+        {/* Net Profit */}
+        <div className={`rounded-2xl p-6 shadow-lg border ${
+          isProfitable 
+            ? 'bg-emerald-50 border-emerald-200' 
+            : 'bg-rose-50 border-rose-200'
+        }`}>
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-medium text-slate-600">ΚΑΘΑΡΑ ΚΕΡΔΗ</span>
+            {isProfitable ? (
+              <TrendingUp className="text-emerald-600" size={20} />
+            ) : (
+              <TrendingDown className="text-rose-600" size={20} />
+            )}
+          </div>
+          <p className={`text-3xl font-bold mb-1 ${
+            isProfitable ? 'text-emerald-700' : 'text-rose-700'
+          }`}>
+            {formatCurrency(netProfit)}
+          </p>
+          <p className="text-sm text-slate-600">
+            Έξοδα - Έσοδα
+          </p>
+        </div>
+      </div>
+
+      {/* Monthly Cash Flow Chart */}
+      <div className="bg-white rounded-2xl p-6 shadow-lg border border-slate-100">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h3 className="text-xl font-bold text-slate-800">Γράφημα Εσόδων-Εξόδων</h3>
+            <p className="text-sm text-slate-500 mt-1">Μηνιαία σύγκριση</p>
+          </div>
+          <div className="flex gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
+              <span className="text-slate-600">Έσοδα</span>
             </div>
-            <div className={`p-4 rounded-xl border transition-all duration-500 ${showExpenses ? 'bg-rose-50/50 border-rose-100' : 'opacity-50 bg-slate-50 border-slate-100'}`}>
-                <div className="flex items-center gap-2 mb-2 text-rose-700 font-medium text-sm">
-                    <ArrowDownRight size={16} /> Σύνολο Εξόδων
-                </div>
-                <div className="text-2xl font-bold text-slate-800">€{projection.totalExpenses.toLocaleString()}</div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-rose-500"></div>
+              <span className="text-slate-600">Έξοδα</span>
             </div>
+          </div>
+        </div>
+
+        {/* Check if we have data */}
+        {hasData ? (
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={monthlyStats}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis 
+                dataKey="month" 
+                stroke="#64748b"
+                style={{ fontSize: '12px' }}
+              />
+              <YAxis 
+                stroke="#64748b"
+                style={{ fontSize: '12px' }}
+                tickFormatter={(value) => `€${(value / 1000).toFixed(0)}k`}
+              />
+              <Tooltip 
+                formatter={(value: number) => formatCurrency(value)}
+                contentStyle={{
+                  backgroundColor: 'white',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                  boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+                }}
+              />
+              <Legend />
+              <Bar 
+                dataKey="income" 
+                name="Έσοδα" 
+                fill="#10b981" 
+                radius={[8, 8, 0, 0]}
+              />
+              <Bar 
+                dataKey="expenses" 
+                name="Έξοδα" 
+                fill="#ef4444" 
+                radius={[8, 8, 0, 0]}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-[300px] text-slate-400">
+            <AlertCircle size={48} className="mb-4 opacity-50" />
+            <p className="text-lg font-medium">Δεν υπάρχουν δεδομένα</p>
+            <p className="text-sm mt-2">Οι συναλλαγές θα εμφανιστούν εδώ όταν φορτωθούν</p>
+            <p className="text-xs mt-4 text-slate-500">
+              Debug: {monthlyStats.length} months, Income count: {projection.incomeCount}, Expense count: {projection.expenseCount}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Tax Formula Info */}
+      <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-6">
+        <div className="flex items-start gap-3">
+          <AlertCircle className="text-indigo-600 flex-shrink-0 mt-1" size={20} />
+          <div>
+            <h4 className="font-semibold text-indigo-900 mb-2">
+              Τύπος Υπολογισμού Φόρου Ο.Ε.
+            </h4>
+            <p className="text-sm text-indigo-800 leading-relaxed">
+              (Έσοδα - Έξοδα) × 20% + Προκαταβολή Επόμενου Έτους (80%) + Τέλος Επιτηδεύματος (€800)
+            </p>
+            <div className="mt-3 p-3 bg-white rounded-lg text-xs text-slate-600 space-y-1">
+              <div>• <strong>Φορολογητέο Εισόδημα:</strong> {formatCurrency(projection.taxableIncome)}</div>
+              <div>• <strong>Συντελεστής Φόρου:</strong> 20%</div>
+              <div>• <strong>Συντελεστής Προκαταβολής:</strong> 80% (2026)</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

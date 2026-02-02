@@ -1,222 +1,482 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Transaction, TransactionStatus, TransactionType } from '../types';
-import { Edit2, CheckCircle, Lock, AlertCircle, Bot } from 'lucide-react';
-import { format } from 'date-fns';
-import { analyzeDeductibility } from '../services/geminiService';
+import { ChevronLeft, ChevronRight, Calendar, X } from 'lucide-react';
 
 interface TransactionListProps {
   transactions: Transaction[];
   onUpdateTransaction: (updated: Transaction) => void;
 }
 
-const TransactionList: React.FC<TransactionListProps> = ({ transactions, onUpdateTransaction }) => {
-  const [filterType, setFilterType] = useState<'ALL' | TransactionType>('ALL');
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<Partial<Transaction>>({});
-  const [aiAdvice, setAiAdvice] = useState<string | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+const ITEMS_PER_PAGE = 20;
 
-  const filteredTransactions = transactions.filter(t => 
-    filterType === 'ALL' || t.type === filterType
-  ).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+const TransactionList: React.FC<TransactionListProps> = ({ 
+  transactions, 
+  onUpdateTransaction 
+}) => {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [selectedMonth, setSelectedMonth] = useState<string>('all');
+  const [selectedType, setSelectedType] = useState<string>('all');
+  const [selectedStatus, setSelectedStatus] = useState<string>('all');
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
 
-  const handleEditClick = (t: Transaction) => {
-    setEditingId(t.id);
-    setEditForm(t);
-    setAiAdvice(null);
+  // Get unique months from transactions
+  const availableMonths = useMemo(() => {
+    const months = new Set<string>();
+    transactions.forEach(t => {
+      try {
+        const date = new Date(t.date + 'T00:00:00');
+        if (!isNaN(date.getTime())) {
+          const monthYear = date.toLocaleDateString('el-GR', { month: 'long', year: 'numeric' });
+          months.add(monthYear);
+        }
+      } catch (e) {
+        // Skip invalid dates
+      }
+    });
+    return Array.from(months).sort();
+  }, [transactions]);
+
+  // Filter transactions
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter(t => {
+      // Filter by month
+      if (selectedMonth !== 'all') {
+        try {
+          const date = new Date(t.date + 'T00:00:00');
+          const monthYear = date.toLocaleDateString('el-GR', { month: 'long', year: 'numeric' });
+          if (monthYear !== selectedMonth) return false;
+        } catch (e) {
+          return false;
+        }
+      }
+
+      // Filter by type
+      if (selectedType !== 'all' && t.type !== selectedType) return false;
+
+      // Filter by status
+      if (selectedStatus !== 'all' && t.status !== selectedStatus) return false;
+
+      return true;
+    });
+  }, [transactions, selectedMonth, selectedType, selectedStatus]);
+
+  // Pagination
+  const totalPages = Math.ceil(filteredTransactions.length / ITEMS_PER_PAGE);
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = startIndex + ITEMS_PER_PAGE;
+  const paginatedTransactions = filteredTransactions.slice(startIndex, endIndex);
+
+  // Reset to page 1 when filters change
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedMonth, selectedType, selectedStatus]);
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('el-GR', {
+      style: 'currency',
+      currency: 'EUR',
+      minimumFractionDigits: 2,
+    }).format(amount);
   };
 
-  const handleSave = () => {
-    if (editingId && editForm) {
-      onUpdateTransaction(editForm as Transaction);
-      setEditingId(null);
-      setEditForm({});
+  const formatDate = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr + 'T00:00:00');
+      return date.toLocaleDateString('el-GR', { 
+        day: '2-digit', 
+        month: '2-digit', 
+        year: 'numeric' 
+      });
+    } catch (e) {
+      return dateStr;
     }
   };
 
-  const handleAnalyze = async () => {
-    if (!editForm.description || !editForm.amount) return;
-    setIsAnalyzing(true);
-    const advice = await analyzeDeductibility(editForm as Transaction);
-    setAiAdvice(advice);
-    setIsAnalyzing(false);
+  const getStatusBadge = (status: TransactionStatus) => {
+    const styles = {
+      [TransactionStatus.OFFICIAL]: 'bg-blue-100 text-blue-700 border-blue-200',
+      [TransactionStatus.MANUAL_REVIEW]: 'bg-amber-100 text-amber-700 border-amber-200',
+    };
+
+    const labels = {
+      [TransactionStatus.OFFICIAL]: '⚡ Επίσημο',
+      [TransactionStatus.MANUAL_REVIEW]: '⚠ Έλεγχος',
+    };
+
+    return (
+      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${styles[status]}`}>
+        {labels[status]}
+      </span>
+    );
+  };
+
+  const getTypeBadge = (type: TransactionType) => {
+    if (type === TransactionType.INCOME) {
+      return (
+        <span className="inline-flex items-center text-emerald-600 text-sm font-medium">
+          ↑ Έσοδα
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center text-rose-600 text-sm font-medium">
+        ↑ Έξοδα
+        </span>
+    );
+  };
+
+  const handleEdit = (transaction: Transaction) => {
+    // Only allow editing if status is MANUAL_REVIEW
+    if (transaction.status === TransactionStatus.MANUAL_REVIEW) {
+      setEditingTransaction(transaction);
+    }
+  };
+
+  const handleSave = () => {
+    if (editingTransaction) {
+      onUpdateTransaction(editingTransaction);
+      setEditingTransaction(null);
+    }
+  };
+
+  const handleCancel = () => {
+    setEditingTransaction(null);
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full">
-      <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 bg-slate-50/50">
-        <h2 className="text-lg font-semibold text-slate-800">Μητρώο Συναλλαγών</h2>
-        <div className="flex space-x-2">
-          <button 
-            onClick={() => setFilterType('ALL')}
-            className={`px-3 py-1.5 text-sm rounded-full transition-colors ${filterType === 'ALL' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
+    <div className="flex flex-col h-full">
+      {/* Header with Title */}
+      <div className="mb-6">
+        <h2 className="text-3xl font-bold text-slate-800">Μητρώο Συναλλαγών</h2>
+        <p className="text-slate-500 mt-1">
+          Διαχείριση και επισκόπηση όλων των συναλλαγών
+        </p>
+      </div>
+
+      {/* Filters - NO LABEL OR ICON */}
+      <div className="bg-white rounded-2xl p-4 shadow-lg border border-slate-100 mb-4">
+        <div className="flex items-center gap-4 flex-wrap">
+          {/* Month Filter */}
+          <select
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
           >
-            Όλα
-          </button>
-          <button 
-            onClick={() => setFilterType(TransactionType.INCOME)}
-            className={`px-3 py-1.5 text-sm rounded-full transition-colors ${filterType === TransactionType.INCOME ? 'bg-emerald-600 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
+            <option value="all">Όλοι οι μήνες</option>
+            {availableMonths.map(month => (
+              <option key={month} value={month}>{month}</option>
+            ))}
+          </select>
+
+          {/* Type Filter */}
+          <select
+            value={selectedType}
+            onChange={(e) => setSelectedType(e.target.value)}
+            className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
           >
-            Έσοδα
-          </button>
-          <button 
-            onClick={() => setFilterType(TransactionType.EXPENSE)}
-            className={`px-3 py-1.5 text-sm rounded-full transition-colors ${filterType === TransactionType.EXPENSE ? 'bg-rose-600 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
+            <option value="all">Όλα τα είδη</option>
+            <option value={TransactionType.INCOME}>Έσοδα</option>
+            <option value={TransactionType.EXPENSE}>Έξοδα</option>
+          </select>
+
+          {/* Status Filter */}
+          <select
+            value={selectedStatus}
+            onChange={(e) => setSelectedStatus(e.target.value)}
+            className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
           >
-            Έξοδα
-          </button>
+            <option value="all">Όλες οι καταστάσεις</option>
+            <option value={TransactionStatus.OFFICIAL}>Επίσημο</option>
+            <option value={TransactionStatus.MANUAL_REVIEW}>Έλεγχος</option>
+          </select>
+
+          <div className="ml-auto text-sm text-slate-500">
+            {filteredTransactions.length} συναλλαγές
+          </div>
         </div>
       </div>
 
-      <div className="overflow-y-auto flex-1 p-0">
-        <table className="w-full text-sm text-left">
-          <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 shadow-sm z-10">
-            <tr>
-              <th className="px-6 py-3">Ημερομηνία</th>
-              <th className="px-6 py-3">Πελάτης / Περιγραφή</th>
-              <th className="px-6 py-3">Κατάσταση</th>
-              <th className="px-6 py-3 text-right">Ποσό (Net)</th>
-              <th className="px-6 py-3 text-center">Ενέργεια</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {filteredTransactions.map((t) => (
-              <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
-                <td className="px-6 py-4 font-medium text-slate-600 whitespace-nowrap">
-                  {format(new Date(t.date), 'dd/MM/yyyy')}
-                </td>
-                <td className="px-6 py-4">
-                  <div className="font-semibold text-slate-800">{t.clientName}</div>
-                  <div className="text-slate-500 text-xs truncate max-w-[200px]">{t.description}</div>
-                  {t.mark && <div className="text-[10px] text-slate-400 mt-1">MARK: {t.mark}</div>}
-                </td>
-                <td className="px-6 py-4">
-                  {t.status === TransactionStatus.OFFICIAL ? (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
-                      <Lock size={10} /> Επίσημο
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-100 animate-pulse">
-                      <AlertCircle size={10} /> Έλεγχος
-                    </span>
-                  )}
-                </td>
-                <td className={`px-6 py-4 text-right font-bold ${t.type === TransactionType.INCOME ? 'text-emerald-600' : 'text-rose-600'}`}>
-                  {t.type === TransactionType.INCOME ? '+' : '-'}€{t.amount.toFixed(2)}
-                </td>
-                <td className="px-6 py-4 text-center">
-                  {t.status === TransactionStatus.MANUAL_REVIEW && (
-                    <button 
-                      onClick={() => handleEditClick(t)}
-                      className="text-indigo-600 hover:text-indigo-800 p-1.5 hover:bg-indigo-50 rounded-full transition-colors"
-                      title="Edit Transaction"
-                    >
-                      <Edit2 size={16} />
-                    </button>
-                  )}
-                  {t.status === TransactionStatus.OFFICIAL && (
-                    <span className="text-slate-300 flex justify-center"><CheckCircle size={16}/></span>
-                  )}
-                </td>
+      {/* Transaction Table */}
+      <div className="flex-1 bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden flex flex-col">
+        <div className="overflow-x-auto flex-1">
+          <table className="w-full">
+            <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
+              <tr>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                  ΗΜΕΡΟΜΗΝΙΑ
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                  ΠΕΛΑΤΗΣ / ΠΕΡΙΓΡΑΦΗ
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                  ΚΑΤΑΣΤΑΣΗ
+                </th>
+                <th className="px-6 py-4 text-right text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                  ΠΟΣΟ (NET)
+                </th>
+                <th className="px-6 py-4 text-right text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                  ΕΝΕΡΓΕΙΑ
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {paginatedTransactions.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center">
+                    <div className="text-slate-400">
+                      <Calendar size={48} className="mx-auto mb-3 opacity-50" />
+                      <p className="text-lg font-medium">Δεν βρέθηκαν συναλλαγές</p>
+                      <p className="text-sm mt-1">Δοκιμάστε να αλλάξετε τα φίλτρα</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                paginatedTransactions.map((transaction) => (
+                  <tr 
+                    key={transaction.id}
+                    className="hover:bg-slate-50 transition-colors"
+                  >
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-medium text-slate-900">
+                        {formatDate(transaction.date)}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        {getTypeBadge(transaction.type)}
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-slate-900 truncate">
+                            {transaction.clientName}
+                          </div>
+                          <div className="text-xs text-slate-500 truncate">
+                            {transaction.description}
+                          </div>
+                          {transaction.mark && (
+                            <div className="text-xs text-slate-400 mt-1 font-mono">
+                              MARK: {transaction.mark}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {getStatusBadge(transaction.status)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <div className={`text-sm font-semibold ${
+                        transaction.type === TransactionType.INCOME 
+                          ? 'text-emerald-600' 
+                          : 'text-rose-600'
+                      }`}>
+                        {transaction.type === TransactionType.INCOME ? '+' : '-'}
+                        {formatCurrency(transaction.grossAmount)}
+                      </div>
+                      {transaction.vatAmount > 0 && (
+                        <div className="text-xs text-slate-500 mt-1">
+                          ΦΠΑ: {formatCurrency(transaction.vatAmount)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      {transaction.status === TransactionStatus.MANUAL_REVIEW ? (
+                        <button 
+                          className="text-rose-600 hover:text-rose-800 text-lg"
+                          onClick={() => handleEdit(transaction)}
+                          title="Επεξεργασία"
+                        >
+                          ✏️
+                        </button>
+                      ) : (
+                        <span className="text-slate-300 text-lg" title="Επίσημο - Δεν μπορεί να επεξεργαστεί">
+                          ✓
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="border-t border-slate-200 px-6 py-4 bg-slate-50">
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-slate-600">
+                Σελίδα {currentPage} από {totalPages} 
+                <span className="mx-2">•</span>
+                {startIndex + 1}-{Math.min(endIndex, filteredTransactions.length)} από {filteredTransactions.length}
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="p-2 rounded-lg border border-slate-200 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+                
+                {/* Page numbers */}
+                <div className="flex gap-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
+
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`w-10 h-10 rounded-lg border transition-colors ${
+                          currentPage === pageNum
+                            ? 'bg-indigo-600 text-white border-indigo-600'
+                            : 'border-slate-200 hover:bg-white text-slate-600'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="p-2 rounded-lg border border-slate-200 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronRight size={18} />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Edit Modal */}
-      {editingId && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
-            <div className="bg-indigo-600 px-6 py-4 flex justify-between items-center">
-              <h3 className="text-white font-semibold text-lg flex items-center gap-2">
-                <Edit2 size={18} /> Επεξεργασία
+      {editingTransaction && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
+            {/* Modal Header */}
+            <div className="bg-indigo-600 text-white px-6 py-4 rounded-t-2xl flex items-center justify-between">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                ✏️ Επεξεργασία
               </h3>
-              <button onClick={() => setEditingId(null)} className="text-white/80 hover:text-white">✕</button>
+              <button 
+                onClick={handleCancel}
+                className="hover:bg-indigo-700 rounded-lg p-1"
+              >
+                <X size={20} />
+              </button>
             </div>
-            
+
+            {/* Modal Body */}
             <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Ημερομηνία</label>
-                  <input 
-                    type="date" 
-                    value={editForm.date?.split('T')[0]} 
-                    onChange={e => setEditForm({...editForm, date: e.target.value})}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Ποσό (€)</label>
-                  <input 
-                    type="number" 
-                    value={editForm.amount} 
-                    onChange={e => setEditForm({...editForm, amount: parseFloat(e.target.value)})}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
-                  />
-                </div>
-              </div>
-
+              {/* Date */}
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Πελάτης / Προμηθευτής</label>
-                <input 
-                  type="text" 
-                  value={editForm.clientName} 
-                  onChange={e => setEditForm({...editForm, clientName: e.target.value})}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Ημερομηνία
+                </label>
+                <input
+                  type="date"
+                  value={editingTransaction.date}
+                  onChange={(e) => setEditingTransaction({
+                    ...editingTransaction,
+                    date: e.target.value
+                  })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
 
+              {/* Amount */}
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Περιγραφή</label>
-                <textarea 
-                  value={editForm.description} 
-                  onChange={e => setEditForm({...editForm, description: e.target.value})}
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Ποσό (€)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={editingTransaction.grossAmount}
+                  onChange={(e) => setEditingTransaction({
+                    ...editingTransaction,
+                    grossAmount: parseFloat(e.target.value) || 0
+                  })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* Client */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Πελάτης / Προμηθευτής
+                </label>
+                <input
+                  type="text"
+                  value={editingTransaction.clientName}
+                  onChange={(e) => setEditingTransaction({
+                    ...editingTransaction,
+                    clientName: e.target.value
+                  })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Περιγραφή
+                </label>
+                <textarea
+                  value={editingTransaction.description}
+                  onChange={(e) => setEditingTransaction({
+                    ...editingTransaction,
+                    description: e.target.value
+                  })}
                   rows={3}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
                 />
               </div>
 
-              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
-                    <Bot size={14} className="text-indigo-600"/> AI Tax Assistant
-                  </span>
-                  <button 
-                    onClick={handleAnalyze}
-                    disabled={isAnalyzing}
-                    className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-200 transition-colors disabled:opacity-50"
-                  >
-                    {isAnalyzing ? 'Thinking...' : 'Έλεγχος Έκπτωσης Δαπάνης'}
-                  </button>
-                </div>
-                {aiAdvice ? (
-                  <p className="text-xs text-slate-600 italic bg-white p-2 rounded border border-slate-100 shadow-sm">
-                    "{aiAdvice}"
-                  </p>
-                ) : (
-                  <p className="text-xs text-slate-400">Κάντε κλικ για να ελέγξετε αν η δαπάνη εκπίπτει φορολογικά.</p>
-                )}
+              {/* Mark as Official Checkbox */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="markOfficial"
+                  checked={editingTransaction.status === TransactionStatus.OFFICIAL}
+                  onChange={(e) => setEditingTransaction({
+                    ...editingTransaction,
+                    status: e.target.checked ? TransactionStatus.OFFICIAL : TransactionStatus.MANUAL_REVIEW
+                  })}
+                  className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                />
+                <label htmlFor="markOfficial" className="text-sm text-slate-600">
+                  Σήμανση ως Επίσημο
+                </label>
               </div>
+            </div>
 
-              <div className="pt-4 flex justify-between items-center">
-                 <label className="flex items-center gap-2 cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      checked={editForm.status === TransactionStatus.OFFICIAL}
-                      onChange={e => setEditForm({...editForm, status: e.target.checked ? TransactionStatus.OFFICIAL : TransactionStatus.MANUAL_REVIEW})}
-                      className="rounded text-indigo-600 focus:ring-indigo-500"
-                    />
-                    <span className="text-sm text-slate-700">Σήμανση ως Επίσημο</span>
-                 </label>
-                 
-                 <button 
-                  onClick={handleSave}
-                  className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200 font-medium"
-                 >
-                   Αποθήκευση
-                 </button>
-              </div>
+            {/* Modal Footer */}
+            <div className="px-6 py-4 bg-slate-50 rounded-b-2xl flex justify-end gap-3">
+              <button
+                onClick={handleCancel}
+                className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
+              >
+                Ακύρωση
+              </button>
+              <button
+                onClick={handleSave}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+              >
+                Αποθήκευση
+              </button>
             </div>
           </div>
         </div>
