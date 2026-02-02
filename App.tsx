@@ -1,34 +1,71 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Transaction, TaxProjection, MonthlyStats, ViewState, TransactionStatus, TransactionType } from './types';
-import { MOCK_TRANSACTIONS, TAX_RATE, CURRENT_YEAR } from './constants';
+import { CURRENT_YEAR } from './constants';
+import { getStoredTransactions } from './services/dataService';
 import Dashboard from './components/Dashboard';
 import TransactionList from './components/TransactionList';
 import { LayoutDashboard, Receipt, Bell, Plus, CheckCircle2 } from 'lucide-react';
 import { format } from 'date-fns';
 
+// Greek O.E. Tax Constants for 2026
+const TAX_RATE = 0.20; // 20% tax rate for O.E.
+const TELOS_EPITIDEUMATOS = 800; // €800 fixed annual fee
+const ADVANCE_PAYMENT_RATE = 0.80; // 80% advance payment for next year (updated for 2026)
+
 function App() {
   const [viewState, setViewState] = useState<ViewState>('DASHBOARD');
-  const [transactions, setTransactions] = useState<Transaction[]>(MOCK_TRANSACTIONS);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(true);
   const [notifications, setNotifications] = useState<{id: string, message: string, type: 'info' | 'action'}[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
 
-  // --- Logic to compute Projection based on current Transactions ---
+  // Load transactions (both expenses AND income) from n8n
+  useEffect(() => {
+    const loadTransactions = async () => {
+      try {
+        console.log('🚀 Loading all transactions (income + expenses) from n8n...');
+        const data = await getStoredTransactions('oe-user');
+        console.log('✅ Loaded transactions:', data.length);
+        console.log('📊 Income:', data.filter(t => t.type === TransactionType.INCOME).length);
+        console.log('📊 Expenses:', data.filter(t => t.type === TransactionType.EXPENSE).length);
+        setTransactions(data);
+      } catch (error) {
+        console.error('❌ Failed to load transactions:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadTransactions();
+  }, []);
+
+  // --- Tax Projection with Greek O.E. Formula (2026 rates) ---
+  // Formula: (Income - Expenses) × 20% + Advance Payment (80%) + €800 Telos Epitideumatos
   const projection: TaxProjection = useMemo(() => {
     const income = transactions
         .filter(t => t.type === TransactionType.INCOME)
-        .reduce((sum, t) => sum + t.amount, 0);
+        .reduce((sum, t) => sum + t.grossAmount, 0);
+    
     const expenses = transactions
         .filter(t => t.type === TransactionType.EXPENSE)
-        .reduce((sum, t) => sum + t.amount, 0);
+        .reduce((sum, t) => sum + t.grossAmount, 0);
     
-    const taxable = Math.max(0, income - expenses);
+    const taxableIncome = Math.max(0, income - expenses);
+    
+    // Calculate tax components
+    const currentYearTax = taxableIncome * TAX_RATE; // 20% tax
+    const advancePayment = currentYearTax * ADVANCE_PAYMENT_RATE; // 80% advance
+    const totalTax = currentYearTax + advancePayment + TELOS_EPITIDEUMATOS;
     
     return {
         year: CURRENT_YEAR,
         totalIncome: income,
         totalExpenses: expenses,
-        taxableIncome: taxable,
-        estimatedTax: taxable * TAX_RATE,
+        taxableIncome: taxableIncome,
+        estimatedTax: totalTax, // Total tax liability
+        currentYearTax: currentYearTax, // Current year 20% tax
+        advancePayment: advancePayment, // 80% advance for next year
+        telosEpitideumatos: TELOS_EPITIDEUMATOS, // €800 fixed fee
         incomeCount: transactions.filter(t => t.type === TransactionType.INCOME).length,
         expenseCount: transactions.filter(t => t.type === TransactionType.EXPENSE).length
     };
@@ -43,49 +80,38 @@ function App() {
     });
 
     transactions.forEach(t => {
-        const d = new Date(t.date);
-        const m = format(d, 'MMM');
-        if (stats[m]) {
-            if (t.type === TransactionType.INCOME) stats[m].income += t.amount;
-            else stats[m].expenses += t.amount;
+        try {
+            const d = new Date(t.date);
+            const m = format(d, 'MMM');
+            if (stats[m]) {
+                if (t.type === TransactionType.INCOME) stats[m].income += t.grossAmount;
+                else stats[m].expenses += t.grossAmount;
+            }
+        } catch (e) {
+            console.warn('Failed to format date:', t.date, e);
         }
     });
 
     return Object.values(stats);
   }, [transactions]);
 
-
-  // --- Simulation of New Data Arriving (e.g. from n8n) ---
-  useEffect(() => {
-    const timer = setTimeout(() => {
-        const newTx: Transaction = {
-            id: Math.random().toString(36).substr(2, 9),
-            date: new Date().toISOString().split('T')[0],
-            clientName: 'New Client Alert',
-            description: 'Incoming transfer detected via AADE',
-            amount: 1500,
-            vatAmount: 360,
-            grossAmount: 1860,
-            type: TransactionType.INCOME,
-            status: TransactionStatus.OFFICIAL
-        };
-
-        setNotifications(prev => [
-            ...prev, 
-            { id: Date.now().toString(), message: `New Official Income: €${newTx.amount} from ${newTx.clientName}`, type: 'info' }
-        ]);
-        
-        // Add to list
-        setTransactions(prev => [newTx, ...prev]);
-    }, 5000); // Simulate event after 5 seconds
-
-    return () => clearTimeout(timer);
-  }, []);
-
   // Update handler
   const handleUpdateTransaction = (updated: Transaction) => {
     setTransactions(prev => prev.map(t => t.id === updated.id ? updated : t));
   };
+
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-slate-600 font-medium">Φόρτωση δεδομένων από n8n...</p>
+          <p className="text-slate-400 text-sm mt-2">Ανάγνωση εσόδων και εξόδων από Google Sheets</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row">
