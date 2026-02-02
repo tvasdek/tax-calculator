@@ -81,8 +81,23 @@ function App() {
 
     transactions.forEach(t => {
         try {
-            const d = new Date(t.date);
-            const m = format(d, 'MMM');
+            // Parse the date (should already be in YYYY-MM-DD format from normalizeDate)
+            let dateObj: Date;
+            
+            // If date is in YYYY-MM-DD format, parse it correctly
+            if (/^\d{4}-\d{2}-\d{2}/.test(t.date)) {
+                dateObj = new Date(t.date + 'T00:00:00'); // Add time to avoid timezone issues
+            } else {
+                dateObj = new Date(t.date);
+            }
+            
+            // Check if date is valid
+            if (isNaN(dateObj.getTime())) {
+                console.warn('Invalid date:', t.date);
+                return;
+            }
+            
+            const m = format(dateObj, 'MMM');
             if (stats[m]) {
                 if (t.type === TransactionType.INCOME) stats[m].income += t.grossAmount;
                 else stats[m].expenses += t.grossAmount;
