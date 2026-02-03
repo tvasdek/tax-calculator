@@ -37,7 +37,7 @@ const Dashboard: React.FC<DashboardProps> = ({ projection, monthlyStats }) => {
           ΠΡΟΒΛΕΨΗ ΦΟΡΟΥ ({projection.year})
         </h2>
         <p className="text-slate-500 mt-1">
-          Πηγή: AADE & Manual Reviews.
+          Πηγή: AADE & Manual Entries.
         </p>
       </div>
 
