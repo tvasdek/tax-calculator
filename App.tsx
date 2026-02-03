@@ -12,9 +12,11 @@ import {
   requestNotificationPermission,
   manualRefresh,
 } from './services/notificationService';
+import { isAuthenticated, getCurrentUser, logout, User } from './services/authService';
 import Dashboard from './components/Dashboard';
 import TransactionList from './components/TransactionList';
-import { LayoutDashboard, Receipt, Bell, CheckCircle2, RefreshCw } from 'lucide-react';
+import LoginScreen from './components/LoginScreen';
+import { LayoutDashboard, Receipt, Bell, CheckCircle2, RefreshCw, LogOut } from 'lucide-react';
 import { format } from 'date-fns';
 
 // Greek O.E. Tax Constants for 2026
@@ -29,13 +31,33 @@ function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  
+  // Authentication State
+  const [showSplash, setShowSplash] = useState(true);
+  const [isAuth, setIsAuth] = useState(isAuthenticated());
+  const [currentUser, setCurrentUser] = useState<User | null>(getCurrentUser());
   
   // Use ref to prevent double-loading in StrictMode
   const hasLoadedRef = useRef(false);
   const hourlyIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Splash Screen Timer
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowSplash(false);
+    }, 2500);
+    
+    return () => clearTimeout(timer);
+  }, []);
+
   // Load transactions on mount and set up hourly auto-refresh
   useEffect(() => {
+    if (!isAuth) {
+      setLoading(false);
+      return;
+    }
+
     // Prevent double-loading in React StrictMode
     if (hasLoadedRef.current) {
       console.log('⏭️ Skipping duplicate load (React StrictMode)');
@@ -100,7 +122,7 @@ function App() {
         hourlyIntervalRef.current = null;
       }
     };
-  }, []); 
+  }, [isAuth]); 
 
   // Manual refresh handler
   const handleManualRefresh = async () => {
@@ -215,56 +237,145 @@ function App() {
     setNotifications(updated);
   };
 
+  const handleLoginSuccess = () => {
+    setIsAuth(true);
+    setCurrentUser(getCurrentUser());
+  };
+
+  const handleLogout = () => {
+    logout();
+    setIsAuth(false);
+    setCurrentUser(null);
+    setTransactions([]);
+    setNotifications([]);
+    setViewState('DASHBOARD');
+    hasLoadedRef.current = false;
+  };
+
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  return (
-    <>
-      {/* ========================================================================
-        🌊 FADING SPLASH SCREEN (Light Gray Theme)
-        ========================================================================
-      */}
-      <div
-        className={`fixed inset-0 z-[100] flex flex-col items-center justify-center 
-                    bg-gradient-to-br from-gray-50 via-slate-100 to-slate-300
-                    transition-opacity duration-1000 ease-in-out
-                    ${loading ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-      >
-        <div className="relative flex flex-col items-center">
-          {/* PWA Icon - Added a white background to the icon itself so it pops */}
-          <img 
-            src="/pwa-192x192.png" 
-            alt="TaxPulse Logo" 
-            className="w-24 h-24 mb-6 animate-pulse shadow-xl rounded-2xl bg-white" 
-          />
-          
-          {/* App Title - Changed to Dark Slate */}
-          <h2 className="text-slate-800 font-bold text-2xl mb-3 tracking-wide">
-            taxpulse OE
-          </h2>
-          
-          {/* Loading Status - Changed to light glassmorphism with dark text */}
-          <div className="flex items-center space-x-3 px-6 py-2 bg-white/60 rounded-full backdrop-blur-md border border-slate-200 shadow-sm">
-            {/* Spinner is now darker indigo to show up */}
-            <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-slate-600 text-sm font-medium">
-              Συγχρονισμός δεδομένων...
-            </p>
+  // ========================================================================
+  // SPLASH SCREEN (before login check)
+  // ========================================================================
+  if (showSplash) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 flex items-center justify-center overflow-hidden">
+        <div className="absolute inset-0">
+          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-cyan-400 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob"></div>
+          <div className="absolute top-1/3 right-1/4 w-96 h-96 bg-purple-400 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-2000"></div>
+          <div className="absolute bottom-1/4 left-1/3 w-96 h-96 bg-pink-400 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-4000"></div>
+        </div>
+
+        <div className="relative text-center z-10">
+          <div className="mb-8 animate-in zoom-in duration-500">
+            <div className="w-32 h-32 bg-white rounded-3xl shadow-2xl flex items-center justify-center mx-auto transform hover:rotate-12 transition-transform">
+              <span className="text-6xl">💰</span>
+            </div>
+          </div>
+          <h1 className="text-6xl font-bold text-white mb-4 animate-in slide-in-from-bottom duration-700">
+            TaxPulse OE
+          </h1>
+          <p className="text-2xl text-white/90 mb-8 animate-in slide-in-from-bottom duration-700 delay-100">
+            Real-time Tax Calculator
+          </p>
+          <div className="flex items-center justify-center gap-3 animate-in fade-in duration-700 delay-200">
+            <div className="w-3 h-3 bg-white rounded-full animate-bounce"></div>
+            <div className="w-3 h-3 bg-white rounded-full animate-bounce delay-100"></div>
+            <div className="w-3 h-3 bg-white rounded-full animate-bounce delay-200"></div>
           </div>
         </div>
 
-        {/* Footer - Darker gray */}
-        <div className="absolute bottom-8 text-slate-400 text-[10px] uppercase tracking-widest">
-          Secure Workspace
+        <style>{`
+          @keyframes blob {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33% { transform: translate(30px, -50px) scale(1.1); }
+            66% { transform: translate(-20px, 20px) scale(0.9); }
+          }
+          .animate-blob { animation: blob 7s infinite; }
+          .animation-delay-2000 { animation-delay: 2s; }
+          .animation-delay-4000 { animation-delay: 4s; }
+          .delay-100 { animation-delay: 0.1s; }
+          .delay-200 { animation-delay: 0.2s; }
+        `}</style>
+      </div>
+    );
+  }
+
+  // ========================================================================
+  // LOGIN SCREEN
+  // ========================================================================
+  if (!isAuth) {
+    return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  // ========================================================================
+  // MAIN APP (ORIGINAL LAYOUT)
+  // ========================================================================
+  return (
+    <>
+      {/* ========================================================================
+        🌊 LOADING OVERLAY (Identical to Splash Screen)
+        ========================================================================
+      */}
+      <div
+        className={`fixed inset-0 z-[100] flex items-center justify-center 
+                    bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600
+                    transition-opacity duration-1000 ease-in-out overflow-hidden
+                    ${loading ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+      >
+        {/* Animated background orbs */}
+        <div className="absolute inset-0">
+          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-cyan-400 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob"></div>
+          <div className="absolute top-1/3 right-1/4 w-96 h-96 bg-purple-400 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-2000"></div>
+          <div className="absolute bottom-1/4 left-1/3 w-96 h-96 bg-pink-400 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-4000"></div>
         </div>
+
+        <div className="relative text-center z-10">
+          {/* Logo - Same size as splash */}
+          <div className="mb-8 animate-in zoom-in duration-500">
+            <div className="w-32 h-32 bg-white rounded-3xl shadow-2xl flex items-center justify-center mx-auto transform hover:rotate-12 transition-transform">
+              <span className="text-6xl">💰</span>
+            </div>
+          </div>
+          
+          {/* Title - Same size as splash */}
+          <h1 className="text-6xl font-bold text-white mb-4 animate-in slide-in-from-bottom duration-700">
+            TaxPulse OE
+          </h1>
+          
+          {/* Subtitle - Same size as splash, different text */}
+          <p className="text-2xl text-white/90 mb-8 animate-in slide-in-from-bottom duration-700 delay-100">
+            Φόρτωση δεδομένων...
+          </p>
+          
+          {/* Loading dots - Same as splash */}
+          <div className="flex items-center justify-center gap-3 animate-in fade-in duration-700 delay-200">
+            <div className="w-3 h-3 bg-white rounded-full animate-bounce"></div>
+            <div className="w-3 h-3 bg-white rounded-full animate-bounce delay-100"></div>
+            <div className="w-3 h-3 bg-white rounded-full animate-bounce delay-200"></div>
+          </div>
+        </div>
+
+        <style>{`
+          @keyframes blob {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33% { transform: translate(30px, -50px) scale(1.1); }
+            66% { transform: translate(-20px, 20px) scale(0.9); }
+          }
+          .animate-blob { animation: blob 7s infinite; }
+          .animation-delay-2000 { animation-delay: 2s; }
+          .animation-delay-4000 { animation-delay: 4s; }
+          .delay-100 { animation-delay: 0.1s; }
+          .delay-200 { animation-delay: 0.2s; }
+        `}</style>
       </div>
 
       {/* ========================================================================
-        📱 MAIN APP CONTENT
-        (Renders behind the splash screen so it's ready when the fade happens)
+        📱 MAIN APP CONTENT (ORIGINAL LAYOUT)
         ========================================================================
       */}
       <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row">
-        {/* Sidebar Navigation */}
+        {/* Sidebar Navigation - ORIGINAL */}
         <aside className="w-full md:w-64 bg-slate-900 text-white flex flex-col fixed md:relative bottom-0 md:h-screen z-50 order-2 md:order-1">
           <div className="p-6 hidden md:block">
               <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">
@@ -295,6 +406,7 @@ function App() {
               </button>
           </nav>
 
+          {/* System Status - ORIGINAL */}
           <div className="p-4 mt-auto hidden md:block">
               <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
                   <div className="flex items-center gap-2 text-indigo-400 mb-2">
@@ -310,9 +422,9 @@ function App() {
           </div>
         </aside>
 
-        {/* Main Content */}
+        {/* Main Content - ORIGINAL */}
         <main className="flex-1 flex flex-col h-screen overflow-hidden order-1 md:order-2">
-          {/* Top Navbar */}
+          {/* Top Navbar - ORIGINAL (minimal height, no text) */}
           <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-8 shrink-0">
                <div className="md:hidden font-bold text-slate-800">TaxPulse OE</div>
                
@@ -347,7 +459,7 @@ function App() {
                           )}
                       </button>
 
-                      {/* Notification Dropdown */}
+                      {/* Notification Dropdown - ORIGINAL */}
                       {showNotifications && (
                           <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
                               <div className="p-3 bg-slate-50 border-b border-slate-100 font-medium text-sm text-slate-600 flex items-center justify-between">
@@ -415,13 +527,55 @@ function App() {
                       )}
                   </div>
 
-                  <div className="h-8 w-8 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-700 font-bold text-xs border border-indigo-200">
-                      OE
+                  {/* Profile Icon with Dropdown */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowProfileMenu(!showProfileMenu)}
+                      className="h-8 w-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-xs border-2 border-indigo-200 hover:shadow-lg transition-all"
+                      title={currentUser?.fullName || 'User'}
+                    >
+                      {currentUser?.username.charAt(0).toUpperCase() || 'OE'}
+                    </button>
+
+                    {showProfileMenu && (
+                      <>
+                        <div 
+                          className="fixed inset-0 z-40"
+                          onClick={() => setShowProfileMenu(false)}
+                        />
+                        <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 overflow-hidden">
+                          <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-4 text-white">
+                            <div className="flex items-center gap-3">
+                              <div className="h-12 w-12 bg-white/20 backdrop-blur rounded-full flex items-center justify-center text-white font-bold border-2 border-white/50">
+                                {currentUser?.username.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <p className="font-semibold">{currentUser?.fullName}</p>
+                                <p className="text-xs text-indigo-100">@{currentUser?.username}</p>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="p-2">
+                            <button
+                              onClick={() => {
+                                setShowProfileMenu(false);
+                                handleLogout();
+                              }}
+                              className="w-full flex items-center gap-3 px-4 py-3 text-rose-600 hover:bg-rose-50 rounded-xl transition-colors"
+                            >
+                              <LogOut size={18} />
+                              <span className="font-medium">Αποσύνδεση</span>
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                </div>
           </header>
 
-          {/* Scrollable Content Area */}
+          {/* Scrollable Content Area - ORIGINAL */}
           <div className="flex-1 overflow-auto p-4 md:p-8 relative">
               <div className="max-w-6xl mx-auto h-full">
                   {viewState === 'DASHBOARD' && (

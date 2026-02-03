@@ -7,7 +7,7 @@ interface TransactionListProps {
   onUpdateTransaction: (updated: Transaction) => void;
 }
 
-const ITEMS_PER_PAGE = 20;
+const ITEMS_PER_PAGE = 10; // Reduced from 20 to fit one screen
 
 const TransactionList: React.FC<TransactionListProps> = ({ 
   transactions, 
@@ -187,13 +187,20 @@ const TransactionList: React.FC<TransactionListProps> = ({
         }
       `}</style>
       
-      <div className="flex flex-col h-full pb-20 md:pb-0">
-      {/* Header with Title */}
-      <div className="mb-6">
-        <h2 className="text-3xl font-bold text-slate-800">Μητρώο Συναλλαγών</h2>
-        <p className="text-slate-500 mt-1">
-          Διαχείριση και επισκόπηση όλων των συναλλαγών
-        </p>
+      <div className="h-full flex flex-col p-4 md:p-8 bg-slate-50">
+      {/* Header with Title and Actions */}
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h2 className="text-3xl font-bold text-slate-800">📋 Μητρώο Συναλλαγών</h2>
+          <p className="text-slate-500 mt-1">
+            Διαχείριση και επισκόπηση όλων των συναλλαγών
+          </p>
+        </div>
+        
+        {/* Actions - You can add refresh button here if needed */}
+        <div className="flex items-center gap-2">
+          {/* Placeholder for actions like refresh, export, etc. */}
+        </div>
       </div>
 
       {/* Filters */}
