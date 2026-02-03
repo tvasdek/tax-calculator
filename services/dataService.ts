@@ -1,67 +1,84 @@
 import { Transaction, TransactionStatus, TransactionType } from '../types';
-import { MOCK_TRANSACTIONS } from '../constants';
 
 const STORAGE_PREFIX = 'taxpulse_data_';
+const LAST_SEEN_PREFIX = 'taxpulse_last_seen_';
 const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL;
 
-// --- CONFIGURATION: Matches your actual Google Sheet columns ---
-// Based on your screenshot: A/A, DATE, CLIENT, DESCRIPTION, AMOUNT-EUR, AMOUNT-USD, NET, FPA, EE/US, MARK, AFM, AADE, INVOICE-LINK
-const COLUMN_MAP = {
-  id: 'A/A',
-  date: 'DATE',
-  clientName: 'CLIENT',
-  description: 'DESCRIPTION',
-  amountEur: 'AMOUNT-EUR',
-  amountUsd: 'AMOUNT-USD',
-  net: 'NET',
-  fpa: 'FPA',
-  eeUs: 'EE/US',
-  mark: 'MARK',
-  afm: 'AFM',
-  aade: 'AADE',
-  invoiceLink: 'INVOICE-LINK'
+// Helper to create a stable transaction key
+const createTransactionKey = (t: Transaction): string => {
+  return `${t.date}-${t.clientName}-${t.grossAmount}-${t.type}`;
 };
 
-// Helper function to convert Google Sheet row to App Transaction
-const mapRowToTransaction = (row: any): Transaction => {
-  // Determine Type - all expenses for now (you mentioned expense sheet)
-  // If you later add income to this sheet or have a separate income sheet, adjust here
-  const type = TransactionType.EXPENSE;
-
-  // Determine Status based on AADE column and MARK
-  let status = TransactionStatus.MANUAL_REVIEW;
-  const aadeValue = row[COLUMN_MAP.aade]?.toString().toUpperCase() || '';
+// Get last seen transaction keys
+const getLastSeenTransactionKeys = (userId: string): Set<string> => {
+  const key = `${LAST_SEEN_PREFIX}${userId}`;
+  const stored = localStorage.getItem(key);
   
-  if (row[COLUMN_MAP.mark] && row[COLUMN_MAP.mark].length > 5) {
-    status = TransactionStatus.OFFICIAL;
-  } else if (aadeValue === 'MANUAL_REVIEW_REQUIRED') {
-    status = TransactionStatus.MANUAL_REVIEW;
-  } else if (aadeValue === 'OFFICIAL') {
-    status = TransactionStatus.OFFICIAL;
+  if (!stored) return new Set();
+  
+  try {
+    const parsed = JSON.parse(stored);
+    return new Set(parsed);
+  } catch (e) {
+    console.error('Failed to parse last seen keys:', e);
+    return new Set();
   }
+};
 
-  return {
-    id: row[COLUMN_MAP.id]?.toString() || `tx-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    date: row[COLUMN_MAP.date] || new Date().toISOString(),
-    clientName: row[COLUMN_MAP.clientName] || 'Unknown Client',
-    description: row[COLUMN_MAP.description] || 'No description',
-    amount: parseFloat(row[COLUMN_MAP.net]) || 0,
-    vatAmount: parseFloat(row[COLUMN_MAP.fpa]) || 0,
-    grossAmount: parseFloat(row[COLUMN_MAP.amountEur]) || 0,
-    afm: row[COLUMN_MAP.afm] || '',
-    mark: row[COLUMN_MAP.mark] || '',
-    type: type,
-    status: status,
-  };
+// Save last seen transaction keys
+const saveLastSeenTransactionKeys = (userId: string, keys: string[]) => {
+  const key = `${LAST_SEEN_PREFIX}${userId}`;
+  localStorage.setItem(key, JSON.stringify(keys));
+};
+
+// Helper to parse and normalize dates
+const normalizeDate = (dateStr: string): string => {
+  if (!dateStr) return new Date().toISOString().split('T')[0];
+  
+  if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+    return dateStr.split('T')[0];
+  }
+  
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(dateStr)) {
+    try {
+      const [part1, part2, year] = dateStr.split('/');
+      if (parseInt(part1) <= 12) {
+        const month = part1.padStart(2, '0');
+        const day = part2.padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      } else {
+        const day = part1.padStart(2, '0');
+        const month = part2.padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      }
+    } catch (e) {
+      console.warn('Failed to parse date:', dateStr, e);
+      return new Date().toISOString().split('T')[0];
+    }
+  }
+  
+  try {
+    const parsed = new Date(dateStr);
+    if (!isNaN(parsed.getTime())) {
+      return parsed.toISOString().split('T')[0];
+    }
+  } catch (e) {
+    console.warn('Failed to parse date:', dateStr, e);
+  }
+  
+  return new Date().toISOString().split('T')[0];
 };
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const getStoredTransactions = async (userId: string): Promise<Transaction[]> => {
-  // Try to fetch from n8n webhook
   if (N8N_WEBHOOK_URL) {
     try {
       console.log('📡 Fetching transactions from n8n webhook...');
+      
+      // Get last seen transaction keys BEFORE fetching
+      const lastSeenKeys = getLastSeenTransactionKeys(userId);
+      console.log('🔑 Last seen transaction count:', lastSeenKeys.size);
       
       const response = await fetch(N8N_WEBHOOK_URL, {
         method: 'POST',
@@ -79,159 +96,245 @@ export const getStoredTransactions = async (userId: string): Promise<Transaction
       }
       
       const data = await response.json();
-      console.log('✅ Received response from n8n:', data);
+      console.log('✅ Received response from n8n');
       
-      // Handle the response structure
+      // Handle different response structures
       let dataArray = [];
-      if (data.transactions && Array.isArray(data.transactions)) {
-        dataArray = data.transactions;
-      } else if (Array.isArray(data)) {
+      
+      if (Array.isArray(data)) {
         dataArray = data;
+      } else if (data.transactions && Array.isArray(data.transactions)) {
+        dataArray = data.transactions;
       } else if (data.data && Array.isArray(data.data)) {
         dataArray = data.data;
+      } else if (typeof data === 'object' && data !== null) {
+        dataArray = [data];
       }
       
+      console.log('📊 Data array length:', dataArray.length);
+      
       if (dataArray.length > 0) {
-        // If n8n already formatted the data in the correct structure, use it directly
-        // Otherwise, map it using our mapper
-        const firstItem = dataArray[0];
-        
-        let mapped: Transaction[];
-        if (firstItem.id && firstItem.amount !== undefined && firstItem.type) {
-          // Data is already in Transaction format from n8n
-          console.log('✅ Data already formatted by n8n');
-          mapped = dataArray as Transaction[];
-        } else {
-          // Data needs mapping from Google Sheet format
-          console.log('🔄 Mapping Google Sheet data to Transaction format');
-          mapped = dataArray.map(mapRowToTransaction);
-        }
+        const mapped: Transaction[] = dataArray.map((item: any, index: number): Transaction => {
+          // Check what fields are available
+          const hasTransactionFields = item.id && item.type && item.status;
+          const hasSheetFields = item.DATE || item.CLIENT || item['AMOUNT-EUR'];
+          
+          if (hasTransactionFields) {
+            // n8n already formatted it
+            return {
+              id: item.id || `tx-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              date: normalizeDate(item.date || ''),
+              clientName: item.clientName || 'Unknown',
+              description: item.description || '',
+              amount: parseFloat(item.amount) || 0,
+              vatAmount: parseFloat(item.vatAmount) || 0,
+              grossAmount: parseFloat(item.grossAmount) || 0,
+              afm: item.afm || '',
+              mark: item.mark || '',
+              type: item.type || TransactionType.EXPENSE,
+              status: item.status || TransactionStatus.MANUAL_REVIEW,
+            };
+          } else if (hasSheetFields) {
+            // Raw Google Sheets data
+            const aadeValue = item.AADE?.toString().toUpperCase() || '';
+            let status = TransactionStatus.MANUAL_REVIEW;
+            
+            if (item.MARK && item.MARK.length > 5) {
+              status = TransactionStatus.OFFICIAL;
+            } else if (aadeValue === 'MANUAL_REVIEW_REQUIRED') {
+              status = TransactionStatus.MANUAL_REVIEW;
+            } else if (aadeValue === 'OFFICIAL') {
+              status = TransactionStatus.OFFICIAL;
+            }
+            
+            return {
+              id: item['A/A']?.toString() || `tx-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              date: normalizeDate(item.DATE || ''),
+              clientName: item.CLIENT || 'Unknown',
+              description: item.DESCRIPTION || '',
+              amount: parseFloat(item.NET) || 0,
+              vatAmount: parseFloat(item.FPA) || 0,
+              grossAmount: parseFloat(item['AMOUNT-EUR']) || 0,
+              afm: item.AFM || '',
+              mark: item.MARK || '',
+              type: TransactionType.EXPENSE,
+              status: status,
+            };
+          } else {
+            // Unknown format
+            console.warn('Unknown item format:', item);
+            return {
+              id: `tx-unknown-${index}`,
+              date: normalizeDate(new Date().toISOString()),
+              clientName: 'Unknown Format',
+              description: JSON.stringify(item),
+              amount: 0,
+              vatAmount: 0,
+              grossAmount: 0,
+              afm: '',
+              mark: '',
+              type: TransactionType.EXPENSE,
+              status: TransactionStatus.MANUAL_REVIEW,
+            };
+          }
+        });
         
         console.log(`✅ Successfully processed ${mapped.length} transactions`);
         
-        // Cache in localStorage for offline access
+        // Sort by date descending (newest first)
+        mapped.sort((a, b) => {
+          const dateA = new Date(a.date);
+          const dateB = new Date(b.date);
+          return dateB.getTime() - dateA.getTime();
+        });
+        
+        // Mark new transactions by comparing with last seen
+        const currentKeys: string[] = [];
+        let newCount = 0;
+        
+        const markedTransactions = mapped.map(t => {
+          const key = createTransactionKey(t);
+          currentKeys.push(key);
+          
+          const isNew = !lastSeenKeys.has(key);
+          if (isNew) {
+            newCount++;
+            console.log('✨ NEW transaction detected:', key);
+          }
+          
+          return {
+            ...t,
+            isNew, // Mark as new if not in last seen
+          };
+        });
+        
+        console.log(`🎉 Found ${newCount} new transaction(s) out of ${mapped.length} total`);
+        
+        // Save current transaction keys as "last seen" for next time
+        saveLastSeenTransactionKeys(userId, currentKeys);
+        
+        console.log('📊 Sample of sorted data (first 3 - newest):');
+        markedTransactions.slice(0, 3).forEach((t, i) => {
+          console.log(`Transaction ${i}:`, {
+            date: t.date,
+            client: t.clientName,
+            amount: t.grossAmount,
+            isNew: t.isNew
+          });
+        });
+        
+        // Cache in localStorage
         const cacheKey = `${STORAGE_PREFIX}${userId}`;
-        localStorage.setItem(cacheKey, JSON.stringify(mapped));
+        localStorage.setItem(cacheKey, JSON.stringify(markedTransactions));
         localStorage.setItem(`${cacheKey}_timestamp`, new Date().toISOString());
         
-        return mapped;
+        return markedTransactions;
       }
       
       console.warn('⚠️ No transactions found in response');
       return [];
-      
     } catch (error) {
-      console.error('❌ n8n API Error:', error);
-      console.log('📦 Attempting to load from cache...');
-      
-      // Try to load from cache
-      const cached = localStorage.getItem(`${STORAGE_PREFIX}${userId}`);
-      const cacheTimestamp = localStorage.getItem(`${STORAGE_PREFIX}${userId}_timestamp`);
-      
-      if (cached) {
-        try {
-          const cachedData = JSON.parse(cached);
-          console.log(`📦 Loaded ${cachedData.length} transactions from cache (last updated: ${cacheTimestamp || 'unknown'})`);
-          return cachedData;
-        } catch (e) {
-          console.error('❌ Failed to parse cached data:', e);
-        }
-      }
-      
-      console.log('⚠️ No cached data available');
+      console.error('❌ API Fetch Error:', error);
+      throw error;
     }
-  } else {
-    console.warn('⚠️ N8N_WEBHOOK_URL not configured, using fallback data');
   }
 
-  // Fallback to mock data if no n8n URL or all else fails
+  console.log('💾 Loading from local storage (no n8n URL configured)');
   await delay(300);
   const key = `${STORAGE_PREFIX}${userId}`;
   const stored = localStorage.getItem(key);
   
-  if (!stored) {
-    console.log('📝 Using mock transactions (no cached data)');
-    const seededData = MOCK_TRANSACTIONS;
-    localStorage.setItem(key, JSON.stringify(seededData));
-    return seededData;
-  }
+  if (!stored) return [];
   
   try {
-    return JSON.parse(stored);
+    const parsed = JSON.parse(stored);
+    // Sort local data too
+    parsed.sort((a: Transaction, b: Transaction) => {
+      const dateA = new Date(a.date);
+      const dateB = new Date(b.date);
+      return dateB.getTime() - dateA.getTime();
+    });
+    return parsed;
   } catch (e) {
-    console.error('❌ Failed to parse stored data, using mock:', e);
-    return MOCK_TRANSACTIONS;
+    console.error('Failed to parse stored transactions:', e);
+    return [];
   }
 };
 
 export const saveTransactionUpdate = async (userId: string, updatedTx: Transaction): Promise<void> => {
-  if (N8N_WEBHOOK_URL) {
+  const updateWebhookUrl = N8N_WEBHOOK_URL?.replace('/get-all-transactions', '/update-transaction');
+  
+  if (updateWebhookUrl && N8N_WEBHOOK_URL) {
     try {
-      console.log('💾 Saving transaction update via n8n...');
+      console.log('════════════════════════════════════');
+      console.log('💾 SAVING TRANSACTION UPDATE');
+      console.log('ID:', updatedTx.id);
+      console.log('Client:', updatedTx.clientName);
+      console.log('Amount:', updatedTx.grossAmount);
+      console.log('Status:', updatedTx.status);
+      console.log('URL:', updateWebhookUrl);
+      console.log('════════════════════════════════════');
       
-      const response = await fetch(N8N_WEBHOOK_URL, {
+      const response = await fetch(updateWebhookUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           action: 'updateTransaction',
-          userId,
+          userId: userId,
           transaction: updatedTx,
         }),
       });
       
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ n8n returned error:', response.status, errorText);
         throw new Error(`Failed to update via n8n: ${response.status}`);
       }
       
-      console.log('✅ Transaction updated on server');
+      const result = await response.json();
+      console.log('✅ Transaction updated successfully:', result);
       
       // Update local cache
-      const current = await getStoredTransactions(userId);
-      const newData = current.map(t => t.id === updatedTx.id ? updatedTx : t);
-      localStorage.setItem(`${STORAGE_PREFIX}${userId}`, JSON.stringify(newData));
+      const cacheKey = `${STORAGE_PREFIX}${userId}`;
+      const cached = localStorage.getItem(cacheKey);
+      
+      if (cached) {
+        try {
+          const current = JSON.parse(cached);
+          const updated = current.map((t: Transaction) => 
+            t.id === updatedTx.id ? updatedTx : t
+          );
+          localStorage.setItem(cacheKey, JSON.stringify(updated));
+          console.log('✅ Local cache updated');
+        } catch (e) {
+          console.warn('Failed to update cache:', e);
+        }
+      }
       
       return;
     } catch (error) {
-      console.error('❌ API Update Error:', error);
+      console.error('❌ Update failed:', error);
       throw error;
     }
   }
 
-  // Local Storage Fallback
-  console.log('💾 Saving to local storage (no n8n URL configured)');
+  // Fallback: Local Storage only (no n8n)
+  console.log('💾 Saving to local storage only (no n8n URL configured)');
   await delay(300);
   const key = `${STORAGE_PREFIX}${userId}`;
-  const current = await getStoredTransactions(userId);
-  const newData = current.map(t => t.id === updatedTx.id ? updatedTx : t);
-  localStorage.setItem(key, JSON.stringify(newData));
-};
-
-export const syncNewTransactions = async (userId: string, newTx: Transaction): Promise<void> => {
-  const current = await getStoredTransactions(userId);
-  const newData = [newTx, ...current];
-  localStorage.setItem(`${STORAGE_PREFIX}${userId}`, JSON.stringify(newData));
-  console.log('✅ New transaction synced locally');
-};
-
-// Utility function to check connection status
-export const checkN8nConnection = async (): Promise<{ connected: boolean; message: string }> => {
-  if (!N8N_WEBHOOK_URL) {
-    return { connected: false, message: 'N8N_WEBHOOK_URL not configured in environment variables' };
-  }
+  const stored = localStorage.getItem(key);
   
-  try {
-    const response = await fetch(N8N_WEBHOOK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'ping' }),
-    });
-    
-    if (response.ok) {
-      return { connected: true, message: 'Connected to n8n successfully' };
+  if (stored) {
+    try {
+      const current = JSON.parse(stored);
+      const updated = current.map((t: Transaction) => 
+        t.id === updatedTx.id ? updatedTx : t
+      );
+      localStorage.setItem(key, JSON.stringify(updated));
+    } catch (e) {
+      console.error('Failed to update local storage:', e);
     }
-    
-    return { connected: false, message: `n8n returned status: ${response.status}` };
-  } catch (error) {
-    return { connected: false, message: `Connection failed: ${error}` };
   }
 };

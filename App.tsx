@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Transaction, TaxProjection, MonthlyStats, ViewState, TransactionStatus, TransactionType } from './types';
 import { CURRENT_YEAR } from './constants';
-import { getStoredTransactions } from './services/dataService';
+import { getStoredTransactions, saveTransactionUpdate } from './services/dataService';
 import {
   Notification,
   loadNotifications,
@@ -50,11 +50,34 @@ function App() {
         console.log('✅ Loaded transactions:', data.length);
         console.log('📊 Income:', data.filter(t => t.type === TransactionType.INCOME).length);
         console.log('📊 Expenses:', data.filter(t => t.type === TransactionType.EXPENSE).length);
+        
+        // Check for new transactions (marked by dataService)
+        const newTransactions = data.filter((t: any) => t.isNew === true);
+        console.log('🎉 New transactions found:', newTransactions.length);
+        
         setTransactions(data);
+        
+        // Create notifications for new transactions
+        if (newTransactions.length > 0) {
+          newTransactions.forEach((tx: any) => {
+            const notification = createNotificationFromTransaction(tx);
+            const updated = addNotification(notification);
+            setNotifications(updated);
+          });
+          
+          console.log(`📬 Created ${newTransactions.length} notification(s)`);
+        }
         
         // Load saved notifications
         const savedNotifications = loadNotifications();
-        setNotifications(savedNotifications);
+        setNotifications(prev => {
+          // Merge new and saved, removing duplicates
+          const allNotifs = [...prev, ...savedNotifications];
+          const unique = allNotifs.filter((n, index, self) =>
+            index === self.findIndex(t => t.id === n.id)
+          );
+          return unique;
+        });
         
         // Request notification permission on first load
         requestNotificationPermission();
@@ -194,8 +217,21 @@ function App() {
     return Object.values(stats);
   }, [transactions]);
 
-  const handleUpdateTransaction = (updated: Transaction) => {
-    setTransactions(prev => prev.map(t => t.id === updated.id ? updated : t));
+  const handleUpdateTransaction = async (updated: Transaction) => {
+    try {
+      console.log('💾 Saving transaction update...');
+      
+      // Call the API to update Google Sheets
+      await saveTransactionUpdate('oe-user', updated);
+      
+      // Update local state
+      setTransactions(prev => prev.map(t => t.id === updated.id ? updated : t));
+      
+      console.log('✅ Transaction updated successfully');
+    } catch (error) {
+      console.error('❌ Failed to update transaction:', error);
+      alert('Αποτυχία ενημέρωσης. Παρακαλώ δοκιμάστε ξανά.');
+    }
   };
 
   const handleClearNotifications = () => {

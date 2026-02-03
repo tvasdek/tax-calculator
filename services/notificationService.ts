@@ -75,12 +75,22 @@ export const createNotificationFromTransaction = (tx: Transaction): Notification
     currency: 'EUR',
   }).format(tx.grossAmount);
 
+  // Use transaction date as the notification timestamp
+  let notificationDate: Date;
+  try {
+    // Parse the transaction date (YYYY-MM-DD format)
+    notificationDate = new Date(tx.date + 'T12:00:00'); // Use noon to avoid timezone issues
+  } catch (e) {
+    console.warn('Failed to parse transaction date for notification:', tx.date);
+    notificationDate = new Date(); // Fallback to current date
+  }
+
   return {
     id: `notif-${tx.id}-${Date.now()}`,
     message: `Νέο ${tx.type === TransactionType.INCOME ? 'Έσοδο' : 'Έξοδο'}: ${amount} από ${tx.clientName}`,
     type: 'info',
     transaction: tx,
-    timestamp: new Date(),
+    timestamp: notificationDate, // Use transaction date instead of Date.now()
     read: false,
   };
 };

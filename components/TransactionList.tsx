@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Transaction, TransactionStatus, TransactionType } from '../types';
 import { ChevronLeft, ChevronRight, Calendar, X } from 'lucide-react';
 
@@ -18,6 +18,25 @@ const TransactionList: React.FC<TransactionListProps> = ({
   const [selectedType, setSelectedType] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+
+  // Track when user last visited to highlight new transactions
+  const [lastVisitTime, setLastVisitTime] = useState<number>(() => {
+    const stored = localStorage.getItem('taxpulse_last_visit');
+    return stored ? parseInt(stored) : Date.now();
+  });
+
+  // Update last visit time on mount
+  useEffect(() => {
+    const now = Date.now();
+    localStorage.setItem('taxpulse_last_visit', now.toString());
+    
+    // Keep the previous visit time for 5 seconds to show highlights
+    const timer = setTimeout(() => {
+      setLastVisitTime(now);
+    }, 5000);
+    
+    return () => clearTimeout(timer);
+  }, []);
 
   // Get unique months from transactions
   const availableMonths = useMemo(() => {
@@ -92,6 +111,11 @@ const TransactionList: React.FC<TransactionListProps> = ({
     }
   };
 
+  // Check if transaction is new (marked by dataService)
+  const isNewTransaction = (transaction: any) => {
+    return transaction.isNew === true;
+  };
+
   const getStatusBadge = (status: TransactionStatus) => {
     const styles = {
       [TransactionStatus.OFFICIAL]: 'bg-blue-100 text-blue-700 border-blue-200',
@@ -126,7 +150,6 @@ const TransactionList: React.FC<TransactionListProps> = ({
   };
 
   const handleEdit = (transaction: Transaction) => {
-    // Only allow editing if status is MANUAL_REVIEW
     if (transaction.status === TransactionStatus.MANUAL_REVIEW) {
       setEditingTransaction(transaction);
     }
@@ -144,7 +167,27 @@ const TransactionList: React.FC<TransactionListProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <>
+      {/* Custom CSS for frame animation */}
+      <style>{`
+        @keyframes pulse-glow {
+          0%, 100% {
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15), 
+                        0 0 20px rgba(99, 102, 241, 0.1),
+                        inset 0 0 0 1px rgba(99, 102, 241, 0.3);
+          }
+          50% {
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25), 
+                        0 0 30px rgba(99, 102, 241, 0.2),
+                        inset 0 0 0 1px rgba(99, 102, 241, 0.4);
+          }
+        }
+        .frame-highlight {
+          animation: pulse-glow 2s ease-in-out infinite;
+        }
+      `}</style>
+      
+      <div className="flex flex-col h-full pb-20 md:pb-0">
       {/* Header with Title */}
       <div className="mb-6">
         <h2 className="text-3xl font-bold text-slate-800">Μητρώο Συναλλαγών</h2>
@@ -153,7 +196,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
         </p>
       </div>
 
-      {/* Filters - NO LABEL OR ICON */}
+      {/* Filters */}
       <div className="bg-white rounded-2xl p-4 shadow-lg border border-slate-100 mb-4">
         <div className="flex items-center gap-4 flex-wrap">
           {/* Month Filter */}
@@ -197,7 +240,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
       </div>
 
       {/* Transaction Table */}
-      <div className="flex-1 bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden flex flex-col">
+      <div className="flex-1 bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden flex flex-col mb-4">
         <div className="overflow-x-auto flex-1">
           <table className="w-full">
             <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
@@ -231,78 +274,93 @@ const TransactionList: React.FC<TransactionListProps> = ({
                   </td>
                 </tr>
               ) : (
-                paginatedTransactions.map((transaction) => (
-                  <tr 
-                    key={transaction.id}
-                    className="hover:bg-slate-50 transition-colors"
-                  >
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-slate-900">
-                        {formatDate(transaction.date)}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        {getTypeBadge(transaction.type)}
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium text-slate-900 truncate">
-                            {transaction.clientName}
-                          </div>
-                          <div className="text-xs text-slate-500 truncate">
-                            {transaction.description}
-                          </div>
-                          {transaction.mark && (
-                            <div className="text-xs text-slate-400 mt-1 font-mono">
-                              MARK: {transaction.mark}
-                            </div>
+                paginatedTransactions.map((transaction) => {
+                  const isNew = isNewTransaction(transaction);
+                  
+                  return (
+                    <tr 
+                      key={transaction.id}
+                      className={`transition-all ${
+                        isNew 
+                          ? 'bg-indigo-50/80 border-2 border-indigo-400 frame-highlight' 
+                          : 'border-b border-slate-100 hover:bg-slate-50'
+                      }`}
+                    >
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          {isNew && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-indigo-500 text-white animate-pulse">
+                              ΝΕΟ
+                            </span>
                           )}
+                          <div className="text-sm font-medium text-slate-900">
+                            {formatDate(transaction.date)}
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {getStatusBadge(transaction.status)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right">
-                      <div className={`text-sm font-semibold ${
-                        transaction.type === TransactionType.INCOME 
-                          ? 'text-emerald-600' 
-                          : 'text-rose-600'
-                      }`}>
-                        {transaction.type === TransactionType.INCOME ? '+' : '-'}
-                        {formatCurrency(transaction.grossAmount)}
-                      </div>
-                      {transaction.vatAmount > 0 && (
-                        <div className="text-xs text-slate-500 mt-1">
-                          ΦΠΑ: {formatCurrency(transaction.vatAmount)}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          {getTypeBadge(transaction.type)}
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium text-slate-900 truncate">
+                              {transaction.clientName}
+                            </div>
+                            <div className="text-xs text-slate-500 truncate">
+                              {transaction.description}
+                            </div>
+                            {transaction.mark && (
+                              <div className="text-xs text-slate-400 mt-1 font-mono">
+                                MARK: {transaction.mark}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right">
-                      {transaction.status === TransactionStatus.MANUAL_REVIEW ? (
-                        <button 
-                          className="text-rose-600 hover:text-rose-800 text-lg"
-                          onClick={() => handleEdit(transaction)}
-                          title="Επεξεργασία"
-                        >
-                          ✏️
-                        </button>
-                      ) : (
-                        <span className="text-slate-300 text-lg" title="Επίσημο - Δεν μπορεί να επεξεργαστεί">
-                          ✓
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {getStatusBadge(transaction.status)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right">
+                        <div className={`text-sm font-semibold ${
+                          transaction.type === TransactionType.INCOME 
+                            ? 'text-emerald-600' 
+                            : 'text-rose-600'
+                        }`}>
+                          {transaction.type === TransactionType.INCOME ? '+' : '-'}
+                          {formatCurrency(transaction.grossAmount)}
+                        </div>
+                        {transaction.vatAmount > 0 && (
+                          <div className="text-xs text-slate-500 mt-1">
+                            ΦΠΑ: {formatCurrency(transaction.vatAmount)}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right">
+                        {transaction.status === TransactionStatus.MANUAL_REVIEW ? (
+                          <button 
+                            className="text-rose-600 hover:text-rose-800 text-lg"
+                            onClick={() => handleEdit(transaction)}
+                            title="Επεξεργασία"
+                          >
+                            ✏️
+                          </button>
+                        ) : (
+                          <span className="text-slate-300 text-lg" title="Επίσημο - Δεν μπορεί να επεξεργαστεί">
+                            ✓
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
 
-        {/* Pagination */}
+        {/* Pagination - Fixed for mobile */}
         {totalPages > 1 && (
           <div className="border-t border-slate-200 px-6 py-4 bg-slate-50">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-4">
               <div className="text-sm text-slate-600">
                 Σελίδα {currentPage} από {totalPages} 
                 <span className="mx-2">•</span>
@@ -482,6 +540,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
         </div>
       )}
     </div>
+    </>
   );
 };
 
