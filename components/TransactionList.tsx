@@ -6,15 +6,17 @@ import DeleteConfirmModal from './DeleteConfirmModal';
 interface TransactionListProps {
   transactions: Transaction[];
   onUpdateTransaction: (updated: Transaction) => void;
-  onDeleteTransaction: (id: string) => void; // NEW: Delete handler
+  onDeleteTransaction: (id: string) => void;
+  highlightedTransactionId?: string | null; // NEW: For notification navigation
 }
 
-const ITEMS_PER_PAGE = 10; // Reduced from 20 to fit one screen
+const ITEMS_PER_PAGE = 10;
 
 const TransactionList: React.FC<TransactionListProps> = ({ 
   transactions, 
   onUpdateTransaction,
-  onDeleteTransaction // NEW: Delete handler
+  onDeleteTransaction,
+  highlightedTransactionId // NEW
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
@@ -93,6 +95,43 @@ const TransactionList: React.FC<TransactionListProps> = ({
   React.useEffect(() => {
     setCurrentPage(1);
   }, [selectedMonth, selectedType, selectedStatus]);
+
+  // Scroll to highlighted transaction when it changes (MOVED HERE after filteredTransactions)
+  useEffect(() => {
+    if (highlightedTransactionId) {
+      // Find which page the transaction is on
+      const txIndex = filteredTransactions.findIndex(t => t.id === highlightedTransactionId);
+      
+      if (txIndex !== -1) {
+        // Calculate the correct page (1-indexed)
+        const correctPage = Math.floor(txIndex / ITEMS_PER_PAGE) + 1;
+        
+        console.log('Transaction found at index:', txIndex);
+        console.log('Current page:', currentPage, '| Correct page:', correctPage);
+        
+        // Navigate to the correct page if needed
+        if (correctPage !== currentPage) {
+          console.log('Navigating to page:', correctPage);
+          setCurrentPage(correctPage);
+        }
+        
+        // Small delay to ensure DOM is ready after page change
+        setTimeout(() => {
+          const element = document.getElementById(`transaction-${highlightedTransactionId}`);
+          console.log('Attempting scroll, element found:', element !== null);
+          
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            console.log('✅ Scrolled to transaction');
+          } else {
+            console.log('❌ Element still not found after page navigation');
+          }
+        }, correctPage !== currentPage ? 300 : 100); // Longer delay if page changed
+      } else {
+        console.log('⚠️ Transaction not found in filtered list');
+      }
+    }
+  }, [highlightedTransactionId, filteredTransactions, currentPage]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('el-GR', {
@@ -295,14 +334,19 @@ const TransactionList: React.FC<TransactionListProps> = ({
               ) : (
                 paginatedTransactions.map((transaction) => {
                   const isNew = isNewTransaction(transaction);
+                  // Check if transaction is highlighted from notification click
+                  const isHighlighted = highlightedTransactionId === transaction.id;
                   
                   return (
                     <tr 
                       key={transaction.id}
+                      id={`transaction-${transaction.id}`}
                       className={`transition-all ${
-                        isNew 
-                          ? 'bg-indigo-50/80 border-2 border-indigo-400 frame-highlight' 
-                          : 'border-b border-slate-100 hover:bg-slate-50'
+                        isHighlighted
+                          ? 'bg-amber-100 border-2 border-amber-400 shadow-lg' 
+                          : isNew 
+                            ? 'bg-indigo-50/80 border-2 border-indigo-400 frame-highlight' 
+                            : 'border-b border-slate-100 hover:bg-slate-50'
                       }`}
                     >
                       <td className="px-6 py-4 whitespace-nowrap">

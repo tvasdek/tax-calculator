@@ -17,7 +17,8 @@ import Dashboard from './components/Dashboard';
 import TransactionList from './components/TransactionList';
 import LoginScreen from './components/LoginScreen';
 import ToastNotification, { Toast } from './components/ToastNotification';
-import { LayoutDashboard, Receipt, Bell, CheckCircle2, RefreshCw, LogOut } from 'lucide-react';
+import AddTransactionModal, { NewTransactionData } from './components/AddTransactionModal';
+import { LayoutDashboard, Receipt, Bell, CheckCircle2, RefreshCw, LogOut, Plus } from 'lucide-react';
 import { format } from 'date-fns';
 
 // Greek O.E. Tax Constants for 2026
@@ -33,7 +34,9 @@ function App() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const [toasts, setToasts] = useState<Toast[]>([]); // NEW: Toast notifications
+  const [toasts, setToasts] = useState<Toast[]>([]); // Toast notifications
+  const [highlightedTransactionId, setHighlightedTransactionId] = useState<string | null>(null); // NEW: For notification navigation
+  const [showAddModal, setShowAddModal] = useState(false); // NEW: For FAB modal
   
   // Authentication State
   const [showSplash, setShowSplash] = useState(true);
@@ -104,9 +107,23 @@ function App() {
         
         // Load saved notifications
         const savedNotifications = loadNotifications();
+        
+        // Filter out notifications for transactions that no longer exist
+        const validNotifications = savedNotifications.filter(notification => {
+          if (!notification.transaction) return true; // Keep notifications without transactions
+          
+          const exists = data.some(t => t.id === notification.transaction.id);
+          if (!exists) {
+            console.log('Removing stale notification for deleted transaction:', notification.transaction.id);
+          }
+          return exists;
+        });
+        
+        console.log('Filtered notifications:', validNotifications.length, 'valid out of', savedNotifications.length);
+        
         setNotifications(prev => {
-          // Merge new and saved, removing duplicates
-          const allNotifs = [...prev, ...savedNotifications];
+          // Merge new and saved valid notifications, removing duplicates
+          const allNotifs = [...prev, ...validNotifications];
           const unique = allNotifs.filter((n, index, self) =>
             index === self.findIndex(t => t.id === n.id)
           );
@@ -284,6 +301,116 @@ function App() {
   const handleMarkAllRead = () => {
     const updated = markAllAsRead();
     setNotifications(updated);
+  };
+
+  // NEW: Handle notification click - navigate to transaction
+  const handleNotificationClick = (notification: Notification) => {
+    if (notification.transaction) {
+      const txId = notification.transaction.id;
+      
+      // Debug logging
+      console.log('═══════════════════════════════════');
+      console.log('🔔 Notification clicked');
+      console.log('Transaction ID:', txId);
+      
+      // IMPORTANT: Check if transaction still exists in current list
+      const txIndex = transactions.findIndex(t => t.id === txId);
+      console.log('Transaction index in array:', txIndex);
+      
+      if (txIndex === -1) {
+        console.log('⚠️ Transaction not found in current list - might be old or deleted');
+        showToast('Η συναλλαγή δεν βρέθηκε - ίσως έχει διαγραφεί', 'warning');
+        
+        // Close notifications dropdown
+        setShowNotifications(false);
+        return;
+      }
+      
+      // Switch to transactions view
+      setViewState('TRANSACTIONS');
+      
+      // Set highlighted ID
+      setHighlightedTransactionId(txId);
+      console.log('Set highlighted ID to:', txId);
+      console.log('Transaction found at position:', txIndex + 1, 'of', transactions.length);
+      
+      // Wait for view to render, then try to scroll
+      setTimeout(() => {
+        console.log('Attempting to scroll...');
+        
+        // Try to find the element
+        const element = document.getElementById(`transaction-${txId}`);
+        console.log('Element found:', element !== null);
+        
+        if (element) {
+          console.log('✅ Scrolling to element');
+          element.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'center',
+            inline: 'nearest'
+          });
+        } else {
+          console.log('❌ Element not found in DOM');
+          console.log('   This likely means it\'s on a different page (pagination)');
+          
+          // Show which page it should be on
+          const page = Math.floor(txIndex / 10) + 1;
+          console.log('   Transaction should be on page:', page);
+        }
+        
+        console.log('═══════════════════════════════════');
+      }, 500);
+      
+      // Clear highlight after 3 seconds
+      setTimeout(() => {
+        setHighlightedTransactionId(null);
+        console.log('Cleared highlight');
+      }, 3500);
+      
+      // Close notifications dropdown
+      setShowNotifications(false);
+      
+      // Mark as read
+      const updated = markAllAsRead();
+      setNotifications(updated);
+    } else {
+      console.log('⚠️ Notification has no transaction object');
+    }
+  };
+
+  // NEW: Handle add transaction
+  const handleAddTransaction = async (newTransaction: NewTransactionData) => {
+    try {
+      // For now, create a temporary ID (will be replaced by n8n response)
+      const tempId = `temp-${Date.now()}`;
+      
+      const transaction: Transaction = {
+        id: tempId,
+        date: newTransaction.date,
+        clientName: newTransaction.clientName,
+        description: newTransaction.description,
+        amount: newTransaction.grossAmount - newTransaction.vatAmount,
+        vatAmount: newTransaction.vatAmount,
+        grossAmount: newTransaction.grossAmount,
+        afm: newTransaction.afm || '',
+        mark: '',
+        type: newTransaction.type,
+        status: newTransaction.status,
+      };
+      
+      // Add to local state optimistically
+      setTransactions(prev => [transaction, ...prev]);
+      
+      // Show success toast
+      showToast(`Η συναλλαγή "${newTransaction.clientName}" προστέθηκε`, 'success');
+      
+      // TODO: Send to n8n to add to Google Sheets
+      // await createTransaction('oe-user', newTransaction);
+      
+    } catch (error) {
+      console.error('❌ Failed to add transaction:', error);
+      showToast('Αποτυχία προσθήκης συναλλαγής', 'error');
+    }
   };
 
   const handleLoginSuccess = () => {
@@ -529,7 +656,8 @@ function App() {
                                       notifications.map(n => (
                                           <div 
                                               key={n.id} 
-                                              className={`p-3 border-b border-slate-50 hover:bg-slate-50 transition-colors ${
+                                              onClick={() => handleNotificationClick(n)}
+                                              className={`p-3 border-b border-slate-50 hover:bg-slate-50 transition-colors cursor-pointer ${
                                                   !n.read ? 'bg-indigo-50/30' : ''
                                               }`}
                                           >
@@ -638,12 +766,30 @@ function App() {
                             transactions={transactions} 
                             onUpdateTransaction={handleUpdateTransaction}
                             onDeleteTransaction={handleDeleteTransaction}
+                            highlightedTransactionId={highlightedTransactionId}
                           />
                       </div>
                   )}
               </div>
           </div>
         </main>
+
+        {/* Floating Action Button (FAB) */}
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-br from-indigo-600 to-purple-600 text-white rounded-full shadow-2xl hover:shadow-indigo-500/50 transition-all hover:scale-110 flex items-center justify-center z-40"
+          title="Προσθήκη Συναλλαγής"
+        >
+          <Plus size={24} />
+        </button>
+
+        {/* Add Transaction Modal */}
+        {showAddModal && (
+          <AddTransactionModal
+            onClose={() => setShowAddModal(false)}
+            onAdd={handleAddTransaction}
+          />
+        )}
       </div>
 
       {/* Toast Notifications */}
