@@ -1,26 +1,28 @@
-export enum TransactionStatus {
-  OFFICIAL = 'OFFICIAL',
-  MANUAL_REVIEW = 'MANUAL_REVIEW',
-}
-
+// Transaction Types
 export enum TransactionType {
   INCOME = 'INCOME',
   EXPENSE = 'EXPENSE',
 }
 
+export enum TransactionStatus {
+  OFFICIAL = 'OFFICIAL',
+  MANUAL_REVIEW = 'MANUAL_REVIEW',
+}
+
 export interface Transaction {
   id: string;
-  date: string; // ISO Date string
+  date: string; // YYYY-MM-DD format
   clientName: string;
   description: string;
-  amount: number; // Net amount
-  vatAmount: number;
-  grossAmount: number;
+  amount: number; // NET amount
+  vatAmount: number; // FPA
+  grossAmount: number; // AMOUNT-EUR
+  afm: string;
+  mark: string;
   type: TransactionType;
   status: TransactionStatus;
-  afm?: string;
-  mark?: string;
-  category?: string;
+  invoiceLink?: string; // NEW: Link to invoice (AADE for expenses, SharePoint for income)
+  isNew?: boolean; // Flag for new transactions
 }
 
 export interface TaxProjection {
@@ -29,17 +31,15 @@ export interface TaxProjection {
   totalExpenses: number;
   taxableIncome: number;
   estimatedTax: number;
-  expenseCount: number;
+  currentYearTax: number;
+  advancePayment: number;
+  telosEpitideumatos: number;
   incomeCount: number;
-  
-  // ADD THESE THREE LINES:
-  currentYearTax?: number;      // 20% tax on profit
-  advancePayment?: number;       // 80% advance payment  
-  telosEpitideumatos?: number;   // €800 fixed fee
+  expenseCount: number;
 }
 
 export interface MonthlyStats {
-  month: string; // "Jan", "Feb" etc
+  month: string;
   income: number;
   expenses: number;
 }

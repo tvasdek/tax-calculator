@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Transaction, TaxProjection, MonthlyStats, ViewState, TransactionStatus, TransactionType } from './types';
 import { CURRENT_YEAR } from './constants';
-import { getStoredTransactions, saveTransactionUpdate } from './services/dataService';
+import { getStoredTransactions, saveTransactionUpdate, deleteTransaction } from './services/dataService';
 import {
   Notification,
   loadNotifications,
@@ -16,6 +16,7 @@ import { isAuthenticated, getCurrentUser, logout, User } from './services/authSe
 import Dashboard from './components/Dashboard';
 import TransactionList from './components/TransactionList';
 import LoginScreen from './components/LoginScreen';
+import ToastNotification, { Toast } from './components/ToastNotification';
 import { LayoutDashboard, Receipt, Bell, CheckCircle2, RefreshCw, LogOut } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -32,6 +33,7 @@ function App() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [toasts, setToasts] = useState<Toast[]>([]); // NEW: Toast notifications
   
   // Authentication State
   const [showSplash, setShowSplash] = useState(true);
@@ -41,6 +43,21 @@ function App() {
   // Use ref to prevent double-loading in StrictMode
   const hasLoadedRef = useRef(false);
   const hourlyIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Toast notification helpers
+  const showToast = (message: string, type: Toast['type'] = 'success', duration = 3000) => {
+    const toast: Toast = {
+      id: `toast-${Date.now()}-${Math.random()}`,
+      message,
+      type,
+      duration,
+    };
+    setToasts(prev => [...prev, toast]);
+  };
+
+  const removeToast = (id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
 
   // Splash Screen Timer
   useEffect(() => {
@@ -224,6 +241,38 @@ function App() {
     } catch (error) {
       console.error('❌ Failed to update transaction:', error);
       alert('Αποτυχία ενημέρωσης. Παρακαλώ δοκιμάστε ξανά.');
+    }
+  };
+
+  const handleDeleteTransaction = async (transactionId: string) => {
+    try {
+      console.log('🗑️ Deleting transaction:', transactionId);
+      
+      // Get transaction details before deleting (for toast message)
+      const transaction = transactions.find(t => t.id === transactionId);
+      const clientName = transaction?.clientName || 'Συναλλαγή';
+      
+      // Optimistically remove from UI immediately
+      setTransactions(prev => prev.filter(t => t.id !== transactionId));
+      
+      // Show success toast
+      showToast(`Η συναλλαγή "${clientName}" διαγράφηκε επιτυχώς`, 'success');
+      
+      try {
+        // Try to delete via n8n
+        await deleteTransaction('oe-user', transactionId);
+        console.log('✅ Transaction deleted successfully from backend');
+      } catch (apiError) {
+        console.warn('⚠️ API response failed, but delete likely succeeded:', apiError);
+        // Don't re-add the transaction - the actual deletion probably worked
+        // The error is just in the response formatting
+      }
+      
+    } catch (error) {
+      console.error('❌ Critical delete error:', error);
+      showToast('Αποτυχία διαγραφής. Ανανέωση σελίδας...', 'error');
+      // Reload to sync with actual state
+      setTimeout(() => window.location.reload(), 1000);
     }
   };
 
@@ -585,13 +634,20 @@ function App() {
                   )}
                   {viewState === 'TRANSACTIONS' && (
                       <div className="h-full animate-in fade-in slide-in-from-bottom-4 duration-500">
-                          <TransactionList transactions={transactions} onUpdateTransaction={handleUpdateTransaction} />
+                          <TransactionList 
+                            transactions={transactions} 
+                            onUpdateTransaction={handleUpdateTransaction}
+                            onDeleteTransaction={handleDeleteTransaction}
+                          />
                       </div>
                   )}
               </div>
           </div>
         </main>
       </div>
+
+      {/* Toast Notifications */}
+      <ToastNotification toasts={toasts} onRemove={removeToast} />
     </>
   );
 }

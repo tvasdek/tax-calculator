@@ -131,6 +131,7 @@ export const getStoredTransactions = async (userId: string): Promise<Transaction
               grossAmount: parseFloat(item.grossAmount) || 0,
               afm: item.afm || '',
               mark: item.mark || '',
+              invoiceLink: item.invoiceLink || '', // NEW: Include invoice link
               type: item.type || TransactionType.EXPENSE,
               status: item.status || TransactionStatus.MANUAL_REVIEW,
             };
@@ -157,6 +158,7 @@ export const getStoredTransactions = async (userId: string): Promise<Transaction
               grossAmount: parseFloat(item['AMOUNT-EUR']) || 0,
               afm: item.AFM || '',
               mark: item.MARK || '',
+              invoiceLink: item.invoiceLink || '', // NEW: Map invoice link
               type: TransactionType.EXPENSE,
               status: status,
             };
@@ -335,6 +337,76 @@ export const saveTransactionUpdate = async (userId: string, updatedTx: Transacti
       localStorage.setItem(key, JSON.stringify(updated));
     } catch (e) {
       console.error('Failed to update local storage:', e);
+    }
+  }
+};
+
+export const deleteTransaction = async (userId: string, transactionId: string): Promise<void> => {
+  const deleteWebhookUrl = N8N_WEBHOOK_URL?.replace('/get-all-transactions', '/delete-transaction');
+  
+  if (deleteWebhookUrl && N8N_WEBHOOK_URL) {
+    try {
+      console.log('════════════════════════════════════');
+      console.log('🗑️ DELETING TRANSACTION');
+      console.log('ID:', transactionId);
+      console.log('URL:', deleteWebhookUrl);
+      console.log('════════════════════════════════════');
+      
+      const response = await fetch(deleteWebhookUrl, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'deleteTransaction',
+          userId: userId,
+          transactionId: transactionId,
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ n8n returned error:', response.status, errorText);
+        throw new Error(`Failed to delete via n8n: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      console.log('✅ Transaction deleted successfully:', result);
+      
+      // Update local cache
+      const cacheKey = `${STORAGE_PREFIX}${userId}`;
+      const cached = localStorage.getItem(cacheKey);
+      
+      if (cached) {
+        try {
+          const current = JSON.parse(cached);
+          const updated = current.filter((t: Transaction) => t.id !== transactionId);
+          localStorage.setItem(cacheKey, JSON.stringify(updated));
+          console.log('✅ Local cache updated');
+        } catch (e) {
+          console.warn('Failed to update cache:', e);
+        }
+      }
+      
+      return;
+    } catch (error) {
+      console.error('❌ Delete failed:', error);
+      throw error;
+    }
+  }
+
+  // Fallback: Local Storage only
+  console.log('🗑️ Deleting from local storage only');
+  const key = `${STORAGE_PREFIX}${userId}`;
+  const stored = localStorage.getItem(key);
+  
+  if (stored) {
+    try {
+      const current = JSON.parse(stored);
+      const updated = current.filter((t: Transaction) => t.id !== transactionId);
+      localStorage.setItem(key, JSON.stringify(updated));
+    } catch (e) {
+      console.error('Failed to delete from local storage:', e);
     }
   }
 };

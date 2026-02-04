@@ -1,23 +1,27 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Transaction, TransactionStatus, TransactionType } from '../types';
-import { ChevronLeft, ChevronRight, Calendar, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, X, Trash2, ExternalLink } from 'lucide-react';
+import DeleteConfirmModal from './DeleteConfirmModal';
 
 interface TransactionListProps {
   transactions: Transaction[];
   onUpdateTransaction: (updated: Transaction) => void;
+  onDeleteTransaction: (id: string) => void; // NEW: Delete handler
 }
 
 const ITEMS_PER_PAGE = 10; // Reduced from 20 to fit one screen
 
 const TransactionList: React.FC<TransactionListProps> = ({ 
   transactions, 
-  onUpdateTransaction 
+  onUpdateTransaction,
+  onDeleteTransaction // NEW: Delete handler
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
   const [selectedType, setSelectedType] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [deletingTransaction, setDeletingTransaction] = useState<Transaction | null>(null); // NEW: Delete state
 
   // Track when user last visited to highlight new transactions
   const [lastVisitTime, setLastVisitTime] = useState<number>(() => {
@@ -164,6 +168,14 @@ const TransactionList: React.FC<TransactionListProps> = ({
 
   const handleCancel = () => {
     setEditingTransaction(null);
+  };
+
+  // NEW: Delete handler
+  const handleDeleteConfirm = () => {
+    if (deletingTransaction) {
+      onDeleteTransaction(deletingTransaction.id);
+      setDeletingTransaction(null);
+    }
   };
 
   return (
@@ -342,19 +354,44 @@ const TransactionList: React.FC<TransactionListProps> = ({
                         )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right">
-                        {transaction.status === TransactionStatus.MANUAL_REVIEW ? (
-                          <button 
-                            className="text-rose-600 hover:text-rose-800 text-lg"
-                            onClick={() => handleEdit(transaction)}
-                            title="Επεξεργασία"
+                        <div className="flex items-center justify-end gap-2">
+                          {/* Invoice Link */}
+                          {transaction.invoiceLink && (
+                            <a
+                              href={transaction.invoiceLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-2 text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"
+                              title="Άνοιγμα Τιμολογίου"
+                            >
+                              <ExternalLink size={18} />
+                            </a>
+                          )}
+                          
+                          {/* Edit Button */}
+                          {transaction.status === TransactionStatus.MANUAL_REVIEW ? (
+                            <button 
+                              className="p-2 text-amber-500 hover:bg-amber-50 rounded-lg transition-colors"
+                              onClick={() => handleEdit(transaction)}
+                              title="Επεξεργασία"
+                            >
+                              ✏️
+                            </button>
+                          ) : (
+                            <span className="p-2 text-slate-300" title="Επίσημο - Δεν μπορεί να επεξεργαστεί">
+                              ✓
+                            </span>
+                          )}
+                          
+                          {/* Delete Button */}
+                          <button
+                            onClick={() => setDeletingTransaction(transaction)}
+                            className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                            title="Διαγραφή"
                           >
-                            ✏️
+                            <Trash2 size={18} />
                           </button>
-                        ) : (
-                          <span className="text-slate-300 text-lg" title="Επίσημο - Δεν μπορεί να επεξεργαστεί">
-                            ✓
-                          </span>
-                        )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -546,6 +583,13 @@ const TransactionList: React.FC<TransactionListProps> = ({
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmModal
+        transaction={deletingTransaction}
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => setDeletingTransaction(null)}
+      />
     </div>
     </>
   );
