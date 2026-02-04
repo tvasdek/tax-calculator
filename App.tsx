@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Transaction, TaxProjection, MonthlyStats, ViewState, TransactionStatus, TransactionType } from './types';
 import { CURRENT_YEAR } from './constants';
-import { getStoredTransactions, saveTransactionUpdate, deleteTransaction } from './services/dataService';
+import { getStoredTransactions, saveTransactionUpdate, deleteTransaction, createTransaction } from './services/dataService';
 import {
   Notification,
   loadNotifications,
@@ -381,31 +381,18 @@ function App() {
   // NEW: Handle add transaction
   const handleAddTransaction = async (newTransaction: NewTransactionData) => {
     try {
-      // For now, create a temporary ID (will be replaced by n8n response)
-      const tempId = `temp-${Date.now()}`;
+      console.log('🆕 Adding new transaction:', newTransaction);
       
-      const transaction: Transaction = {
-        id: tempId,
-        date: newTransaction.date,
-        clientName: newTransaction.clientName,
-        description: newTransaction.description,
-        amount: newTransaction.grossAmount - newTransaction.vatAmount,
-        vatAmount: newTransaction.vatAmount,
-        grossAmount: newTransaction.grossAmount,
-        afm: newTransaction.afm || '',
-        mark: '',
-        type: newTransaction.type,
-        status: newTransaction.status,
-      };
+      // Call n8n to create transaction in Google Sheets
+      const createdTransaction = await createTransaction('oe-user', newTransaction);
       
-      // Add to local state optimistically
-      setTransactions(prev => [transaction, ...prev]);
+      console.log('✅ Transaction created:', createdTransaction);
+      
+      // Add to local state with real ID from n8n
+      setTransactions(prev => [createdTransaction, ...prev]);
       
       // Show success toast
-      showToast(`Η συναλλαγή "${newTransaction.clientName}" προστέθηκε`, 'success');
-      
-      // TODO: Send to n8n to add to Google Sheets
-      // await createTransaction('oe-user', newTransaction);
+      showToast(`Η συναλλαγή "${newTransaction.clientName}" προστέθηκε επιτυχώς`, 'success');
       
     } catch (error) {
       console.error('❌ Failed to add transaction:', error);

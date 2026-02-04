@@ -158,7 +158,7 @@ export const getStoredTransactions = async (userId: string): Promise<Transaction
               grossAmount: parseFloat(item['AMOUNT-EUR']) || 0,
               afm: item.AFM || '',
               mark: item.MARK || '',
-              invoiceLink: item.invoiceLink || '', // NEW: Map invoice link
+              invoiceLink: item.INVOICE_LINK || '', // NEW: Map invoice link
               type: TransactionType.EXPENSE,
               status: status,
             };
@@ -409,4 +409,106 @@ export const deleteTransaction = async (userId: string, transactionId: string): 
       console.error('Failed to delete from local storage:', e);
     }
   }
+};
+
+/**
+ * Create a new transaction
+ */
+export const createTransaction = async (
+  userId: string,
+  transactionData: {
+    date: string; // YYYY-MM-DD
+    clientName: string;
+    description: string;
+    grossAmount: number;
+    vatAmount: number;
+    type: TransactionType;
+    afm?: string;
+    status: TransactionStatus;
+    invoiceLink?: string;
+  }
+): Promise<Transaction> => {
+  console.log('🆕 Creating transaction:', transactionData);
+
+  // If N8N webhook is available, use it
+  if (N8N_WEBHOOK_URL) {
+    try {
+      const createWebhookUrl = N8N_WEBHOOK_URL.replace(
+        '/get-all-transactions',
+        '/create-transaction'
+      );
+
+      console.log('📤 Sending to n8n:', createWebhookUrl);
+
+      const response = await fetch(createWebhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(transactionData),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to create transaction: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      console.log('✅ Transaction created:', result);
+
+      if (!result.success || !result.transaction) {
+        throw new Error('Invalid response from server');
+      }
+
+      // Update local cache
+      const cacheKey = `${STORAGE_PREFIX}${userId}`;
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        try {
+          const current = JSON.parse(cached);
+          const updated = [result.transaction, ...current];
+          localStorage.setItem(cacheKey, JSON.stringify(updated));
+          console.log('✅ Local cache updated with new transaction');
+        } catch (e) {
+          console.warn('Failed to update cache:', e);
+        }
+      }
+
+      return result.transaction;
+    } catch (error) {
+      console.error('❌ Create failed:', error);
+      throw error;
+    }
+  }
+
+  // Fallback: Create temp transaction for local storage only
+  console.log('⚠️ N8N not available, creating local transaction only');
+  const tempTransaction: Transaction = {
+    id: `temp-${Date.now()}`,
+    date: transactionData.date,
+    clientName: transactionData.clientName,
+    description: transactionData.description,
+    amount: transactionData.grossAmount - transactionData.vatAmount,
+    vatAmount: transactionData.vatAmount,
+    grossAmount: transactionData.grossAmount,
+    afm: transactionData.afm || '',
+    mark: '',
+    invoiceLink: transactionData.invoiceLink || '',
+    type: transactionData.type,
+    status: transactionData.status,
+  };
+
+  // Save to local storage
+  const key = `${STORAGE_PREFIX}${userId}`;
+  const stored = localStorage.getItem(key);
+  if (stored) {
+    try {
+      const current = JSON.parse(stored);
+      const updated = [tempTransaction, ...current];
+      localStorage.setItem(key, JSON.stringify(updated));
+    } catch (e) {
+      console.error('Failed to save to local storage:', e);
+    }
+  }
+
+  return tempTransaction;
 };

@@ -127,7 +127,7 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ onClose, onAd
           {/* Date */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">
-              Ημερομηνία *
+              Ημερομηνία * (ΗΗ/ΜΜ/ΕΕΕΕ)
             </label>
             <input
               type="date"
@@ -137,6 +137,11 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ onClose, onAd
                 errors.date ? 'border-rose-500' : 'border-slate-200'
               }`}
             />
+            {formData.date && (
+              <p className="mt-1 text-xs text-slate-500">
+                Επιλεγμένη: {formData.date.split('-').reverse().join('/')}
+              </p>
+            )}
             {errors.date && <p className="mt-1 text-sm text-rose-600">{errors.date}</p>}
           </div>
 

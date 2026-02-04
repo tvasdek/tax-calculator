@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Transaction, TransactionStatus, TransactionType } from '../types';
-import { ChevronLeft, ChevronRight, Calendar, X, Trash2, ExternalLink } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, X, Trash2, ExternalLink, Search } from 'lucide-react';
 import DeleteConfirmModal from './DeleteConfirmModal';
 
 interface TransactionListProps {
@@ -22,6 +22,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
   const [selectedType, setSelectedType] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>(''); // NEW: Search state
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [deletingTransaction, setDeletingTransaction] = useState<Transaction | null>(null); // NEW: Delete state
 
@@ -64,6 +65,14 @@ const TransactionList: React.FC<TransactionListProps> = ({
   // Filter transactions
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
+      // Filter by search query (client name or description)
+      if (searchQuery.trim() !== '') {
+        const query = searchQuery.toLowerCase();
+        const matchesClient = t.clientName.toLowerCase().includes(query);
+        const matchesDescription = t.description.toLowerCase().includes(query);
+        if (!matchesClient && !matchesDescription) return false;
+      }
+
       // Filter by month
       if (selectedMonth !== 'all') {
         try {
@@ -83,7 +92,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
 
       return true;
     });
-  }, [transactions, selectedMonth, selectedType, selectedStatus]);
+  }, [transactions, selectedMonth, selectedType, selectedStatus, searchQuery]);
 
   // Pagination
   const totalPages = Math.ceil(filteredTransactions.length / ITEMS_PER_PAGE);
@@ -94,7 +103,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
   // Reset to page 1 when filters change
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [selectedMonth, selectedType, selectedStatus]);
+  }, [selectedMonth, selectedType, selectedStatus, searchQuery]);
 
   // Scroll to highlighted transaction when it changes (MOVED HERE after filteredTransactions)
   useEffect(() => {
@@ -291,7 +300,29 @@ const TransactionList: React.FC<TransactionListProps> = ({
             <option value={TransactionStatus.MANUAL_REVIEW}>Έλεγχος</option>
           </select>
 
-          <div className="ml-auto text-sm text-slate-500">
+          {/* Search Input */}
+          <div className="relative flex-1 min-w-[200px]">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search className="h-4 w-4 text-slate-400" />
+            </div>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Αναζήτηση πελάτη ή περιγραφής..."
+              className="w-full pl-10 pr-10 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center"
+              >
+                <X className="h-4 w-4 text-slate-400 hover:text-slate-600" />
+              </button>
+            )}
+          </div>
+
+          <div className="text-sm text-slate-500">
             {filteredTransactions.length} συναλλαγές
           </div>
         </div>
